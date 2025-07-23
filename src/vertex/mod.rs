@@ -1,5 +1,5 @@
-use wgpu;
 use bytemuck;
+use wgpu;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]

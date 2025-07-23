@@ -1,3 +1,4 @@
+use crate::state::State;
 use winit::{
     application::ApplicationHandler,
     event::*,
@@ -5,7 +6,6 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowId},
 };
-use crate::state::State;
 
 #[derive(Default)]
 pub struct App<'a> {
