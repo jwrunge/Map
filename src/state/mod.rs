@@ -1,9 +1,9 @@
+use crate::vertex::{VERTICES, Vertex};
 use wgpu::util::DeviceExt;
 use winit::window::Window;
-use crate::vertex::{Vertex, VERTICES};
 
-pub struct State<'a> {
-    pub surface: wgpu::Surface<'a>,
+pub struct State {
+    pub surface: wgpu::Surface<'static>,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub config: wgpu::SurfaceConfiguration,
@@ -14,13 +14,23 @@ pub struct State<'a> {
     pub window: std::sync::Arc<Window>,
 }
 
-impl<'a> State<'a> {
-    pub async fn new(window: std::sync::Arc<Window>) -> State<'a> {
+impl State {
+    // Keep the async version for both native and WASM
+    pub async fn new(window: std::sync::Arc<Window>) -> State {
+        Self::create_state(window).await
+    }
+
+    // Remove the experimental sync version - not needed anymore
+
+    async fn create_state(window: std::sync::Arc<Window>) -> State {
         let size = window.inner_size();
 
         // The instance is a handle to our GPU
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            #[cfg(not(target_arch = "wasm32"))]
             backends: wgpu::Backends::all(),
+            #[cfg(target_arch = "wasm32")]
+            backends: wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL,
             ..Default::default()
         });
 
@@ -38,6 +48,9 @@ impl<'a> State<'a> {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 required_features: wgpu::Features::empty(),
+                #[cfg(target_arch = "wasm32")]
+                required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
+                #[cfg(not(target_arch = "wasm32"))]
                 required_limits: wgpu::Limits::default(),
                 label: None,
                 memory_hints: Default::default(),
@@ -57,8 +70,8 @@ impl<'a> State<'a> {
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
-            width: size.width,
-            height: size.height,
+            width: size.width.max(1),   // Ensure minimum size of 1
+            height: size.height.max(1), // Ensure minimum size of 1
             present_mode: surface_caps.present_modes[0],
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],

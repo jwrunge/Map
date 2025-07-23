@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>wgpu Triangle</title>
+		<style>
+			body {
+				margin: 0;
+				padding: 0;
+				background: #000;
+				display: flex;
+				justify-content: center;
+				align-items: center;
+				min-height: 100vh;
+			}
+			canvas {
+				display: block;
+				width: 800px;
+				height: 600px;
+				background: #000;
+			}
+		</style>
+	</head>
+	<body>
+		<canvas id="wasm-canvas"></canvas>
+		<script type="module">
+			import init from "./pkg/map.js";
+
+			console.log("Starting WASM initialization...");
+
+			init()
+				.then(() => {
+					console.log("WASM module loaded successfully");
+				})
+				.catch((error) => {
+					console.error("Failed to load WASM module:", error);
+				});
+		</script>
+	</body>
+</html>
