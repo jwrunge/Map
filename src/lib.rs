@@ -1,6 +1,5 @@
 mod app;
 mod state;
-mod vertex;
 
 use winit::event_loop::EventLoop;
 
@@ -39,4 +38,3 @@ pub fn run() {
 
 pub use app::App;
 pub use state::State;
-pub use vertex::{VERTICES, Vertex};
