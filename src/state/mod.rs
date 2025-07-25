@@ -1,268 +1,109 @@
-use wgpu::util::DeviceExt;
 use winit::window::Window;
 
-use crate::renderable::{Renderable, Triangle, VertexProvider};
+use crate::renderable::Triangle;
+use crate::renderer::Renderer;
+use crate::scene::Scene;
+
+pub enum ProjectionMode {
+    Orthographic,
+    Perspective,
+}
 
 pub struct State {
-    pub surface: wgpu::Surface<'static>,
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
-    pub config: wgpu::SurfaceConfiguration,
-    pub size: winit::dpi::PhysicalSize<u32>,
     pub window: std::sync::Arc<Window>,
-    pub render_pipeline: wgpu::RenderPipeline,
-    pub vertex_buffer: wgpu::Buffer,
-    pub uniform_buffer: wgpu::Buffer,
-    pub uniform_bind_group: wgpu::BindGroup,
-    pub num_vertices: u32,
-    pub tri: Triangle,
+    pub renderer: Renderer,
+    pub scene: Scene,
+    pub projection_mode: ProjectionMode,
 }
 
 impl State {
     pub async fn new(window: std::sync::Arc<Window>) -> State {
-        Self::create_state(window).await
-    }
+        let renderer = Renderer::new(window.clone()).await;
+        let mut scene = Scene::new();
 
-    async fn create_state(window: std::sync::Arc<Window>) -> State {
-        let tri = Triangle::new();
+        // Log camera info for debugging
         let size = window.inner_size();
+        let aspect_ratio = size.width as f32 / size.height as f32;
+        log::info!(
+            "Window size: {}x{}, aspect ratio: {}",
+            size.width,
+            size.height,
+            aspect_ratio
+        );
+        log::info!(
+            "Camera bounds: X=[-{}, {}], Y=[-1, 1]",
+            aspect_ratio,
+            aspect_ratio
+        );
 
-        // The instance is a handle to our GPU
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            #[cfg(not(target_arch = "wasm32"))]
-            backends: wgpu::Backends::PRIMARY,
-            #[cfg(target_arch = "wasm32")]
-            backends: wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL,
-            ..Default::default()
-        });
+        // Create some triangles to demonstrate the scene system with Z depth testing
+        let mut triangle1 = Triangle::with_scale(0.3);
+        triangle1.transform.translate_xyz(-0.5, 0.0, -5.0); // Far back
+        let id1 = scene.add_triangle(triangle1);
+        log::info!("Added triangle1 at (-0.5, 0, -5.0) with ID {}", id1);
 
-        let surface = instance.create_surface(window.clone()).unwrap();
+        let mut triangle2 = Triangle::with_scale(0.3);
+        triangle2.transform.translate_xyz(0.5, 0.0, 0.0); // Center depth
+        triangle2
+            .transform
+            .rotate_radians(0.0, 0.0, std::f32::consts::PI / 6.0); // 30 degrees
+        let id2 = scene.add_triangle(triangle2);
+        log::info!("Added triangle2 at (0.5, 0, 0.0) with ID {}", id2);
 
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
-            })
-            .await
-            .unwrap();
+        let mut triangle3 = Triangle::with_scale(0.3);
+        triangle3.transform.translate_xyz(0.0, 0.4, 8.0); // Far forward
+        triangle3
+            .transform
+            .rotate_radians(0.0, 0.0, std::f32::consts::PI / 3.0); // 60 degrees
+        let id3 = scene.add_triangle(triangle3);
+        log::info!("Added triangle3 at (0, 0.4, 8.0) with ID {}", id3);
 
-        let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor {
-                required_features: wgpu::Features::empty(),
-                #[cfg(target_arch = "wasm32")]
-                required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
-                #[cfg(not(target_arch = "wasm32"))]
-                required_limits: wgpu::Limits::default(),
-                label: None,
-                memory_hints: Default::default(),
-                trace: Default::default(),
-            })
-            .await
-            .unwrap();
-
-        let surface_caps = surface.get_capabilities(&adapter);
-        let surface_format = surface_caps
-            .formats
-            .iter()
-            .find(|f| f.is_srgb())
-            .copied()
-            .unwrap_or(surface_caps.formats[0]);
-
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface_format,
-            width: size.width.max(1),   // Ensure minimum size of 1
-            height: size.height.max(1), // Ensure minimum size of 1
-            present_mode: surface_caps.present_modes[0],
-            alpha_mode: surface_caps.alpha_modes[0],
-            view_formats: vec![],
-            desired_maximum_frame_latency: 2,
-        };
-
-        surface.configure(&device, &config);
-        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Transform Uniform Buffer"),
-            size: 64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let uniform_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Transform Bind Group Layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
-
-        let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Transform Bind Group"),
-            layout: &uniform_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
-            }],
-        });
-
-        // Load shader
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Triangle Shader"), // Debug name (optional)
-            source: wgpu::ShaderSource::Wgsl(include_str!("../tri.wgsl").into()),
-        });
-        let render_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&uniform_bind_group_layout],
-                push_constant_ranges: &[],
-            });
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[super::renderable::vertex::Vertex::desc()],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                unclipped_depth: false,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-            cache: None,
-        });
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: tri.buffer_contents(),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-        });
+        log::info!("Total triangles in scene: {}", scene.triangle_count());
 
         Self {
             window,
-            surface,
-            device,
-            queue,
-            config,
-            size,
-            render_pipeline,
-            vertex_buffer,
-            num_vertices: tri.vertex_count() as u32,
-            uniform_buffer,
-            uniform_bind_group,
-            tri,
+            renderer,
+            scene,
+            projection_mode: ProjectionMode::Orthographic,
         }
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        if new_size.width > 0 && new_size.height > 0 {
-            self.size = new_size;
-            self.config.width = new_size.width;
-            self.config.height = new_size.height;
-            self.surface.configure(&self.device, &self.config);
+        self.renderer.resize(new_size);
+    }
+
+    pub fn toggle_projection(&mut self) {
+        self.projection_mode = match self.projection_mode {
+            ProjectionMode::Orthographic => ProjectionMode::Perspective,
+            ProjectionMode::Perspective => ProjectionMode::Orthographic,
+        };
+
+        // Update the renderer's camera projection mode
+        let camera_mode = match self.projection_mode {
+            ProjectionMode::Orthographic => crate::renderer::camera::ProjectionMode::Orthographic,
+            ProjectionMode::Perspective => crate::renderer::camera::ProjectionMode::Perspective,
+        };
+
+        self.renderer.camera.set_projection_mode(camera_mode);
+
+        match self.projection_mode {
+            ProjectionMode::Orthographic => {
+                log::info!("Switched to Orthographic projection - Z translation won't affect size");
+            }
+            ProjectionMode::Perspective => {
+                log::info!("Switched to Perspective projection - Z translation affects size");
+            }
         }
     }
+
     pub fn update(&mut self) {
-        // You may want to pass a real delta time here; for now, use a placeholder value
-        self.tri.update(0.016)
+        // Update the scene (animate triangles)
+        self.scene.update(0.016); // ~60 FPS
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        // Update animation before rendering
-        self.update();
-
-        // Get transform matrix and apply aspect ratio correction
-        let transform_matrix = self.tri.get_transform().to_matrix();
-
-        // Create aspect ratio correction matrix
-        let aspect_ratio = self.config.width as f32 / self.config.height as f32;
-        let aspect_correction = if aspect_ratio > 1.0 {
-            // Wider than tall - compress horizontally
-            glam::Mat4::from_scale(glam::Vec3::new(1.0 / aspect_ratio, 1.0, 1.0))
-        } else {
-            // Taller than wide - compress vertically
-            glam::Mat4::from_scale(glam::Vec3::new(1.0, aspect_ratio, 1.0))
-        };
-
-        // Combine aspect correction with transform
-        let final_matrix = aspect_correction * transform_matrix;
-
-        self.queue.write_buffer(
-            &self.uniform_buffer,
-            0,
-            bytemuck::cast_slice(final_matrix.as_ref()),
-        );
-
-        let output = self.surface.get_current_texture()?;
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
-            });
-
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
-
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.uniform_bind_group, &[]); // Bind the uniform!
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.draw(0..self.num_vertices, 0..1);
-        }
-
-        self.queue.submit(std::iter::once(encoder.finish()));
-        output.present();
-
-        Ok(())
+        // Render all triangles in the scene using batch rendering
+        self.scene
+            .render_triangles_batch(|triangles| self.renderer.render_batch(triangles))
     }
 }

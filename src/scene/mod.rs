@@ -47,15 +47,14 @@ impl Scene {
         }
     }
     
-    /// Render all triangles in the scene
-    pub fn render_triangles<F>(&self, mut render_fn: F) -> Result<(), wgpu::SurfaceError>
+    /// Render all triangles in the scene using batch rendering
+    pub fn render_triangles_batch<F>(&self, mut render_fn: F) -> Result<(), wgpu::SurfaceError>
     where
-        F: FnMut(&Triangle) -> Result<(), wgpu::SurfaceError>,
+        F: FnMut(&[&Triangle]) -> Result<(), wgpu::SurfaceError>,
     {
-        for triangle in self.triangles.values() {
-            render_fn(triangle)?;
-        }
-        Ok(())
+        let triangles: Vec<&Triangle> = self.triangles.values().collect();
+        log::debug!("Batch rendering {} triangles", triangles.len());
+        render_fn(&triangles)
     }
     
     /// Get the number of triangles in the scene

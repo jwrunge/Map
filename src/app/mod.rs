@@ -3,7 +3,6 @@ use winit::{
     application::ApplicationHandler,
     event::*,
     event_loop::ActiveEventLoop,
-    keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowId},
 };
 
@@ -17,6 +16,7 @@ use wasm_bindgen::JsCast;
 pub struct App {
     pub state: Option<State>,
     pub window: Option<std::sync::Arc<Window>>,
+    #[cfg(target_arch = "wasm32")]
     pub state_ready: bool,
     #[cfg(target_arch = "wasm32")]
     pub state_holder: Option<Rc<RefCell<Option<State>>>>,
@@ -27,6 +27,7 @@ impl Default for App {
         Self {
             state: None,
             window: None,
+            #[cfg(target_arch = "wasm32")]
             state_ready: false,
             #[cfg(target_arch = "wasm32")]
             state_holder: None,
@@ -90,16 +91,22 @@ impl ApplicationHandler for App {
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
-            WindowEvent::CloseRequested
-            | WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        state: ElementState::Pressed,
-                        physical_key: PhysicalKey::Code(KeyCode::Escape),
-                        ..
-                    },
-                ..
-            } => event_loop.exit(),
+            WindowEvent::KeyboardInput { event, .. } => {
+                if event.state == winit::event::ElementState::Pressed {
+                    match event.logical_key {
+                        winit::keyboard::Key::Named(winit::keyboard::NamedKey::Space) => {
+                            if let Some(ref mut state) = self.state {
+                                state.toggle_projection();
+                            }
+                        }
+                        winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape) => {
+                            event_loop.exit();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(physical_size) => {
                 if let Some(state) = &mut self.state {
                     state.resize(physical_size);
@@ -124,7 +131,7 @@ impl ApplicationHandler for App {
                                     // Force a surface reconfiguration for WASM
                                     #[cfg(target_arch = "wasm32")]
                                     {
-                                        state.surface.configure(&state.device, &state.config);
+                                        state.renderer.gpu.surface.configure(&state.renderer.gpu.device, &state.renderer.gpu.config);
                                         log::info!("WASM surface reconfigured");
                                     }
                                 }
@@ -154,7 +161,7 @@ impl ApplicationHandler for App {
                     match state.render() {
                         Ok(_) => {}
                         Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                            state.resize(state.size)
+                            state.resize(state.renderer.gpu.size)
                         }
                         Err(wgpu::SurfaceError::OutOfMemory) => {
                             log::error!("OutOfMemory");

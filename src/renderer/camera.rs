@@ -4,6 +4,13 @@
 
 use glam::{Mat4, Vec3};
 
+/// Projection mode for the camera
+#[derive(Clone, Copy, Debug)]
+pub enum ProjectionMode {
+    Orthographic,
+    Perspective,
+}
+
 /// Camera with projection and view matrix management
 pub struct Camera {
     pub view_matrix: Mat4,
@@ -12,6 +19,7 @@ pub struct Camera {
     pub position: Vec3,
     pub target: Vec3,
     pub up: Vec3,
+    pub projection_mode: ProjectionMode,
 }
 
 impl Camera {
@@ -20,9 +28,10 @@ impl Camera {
             view_matrix: Mat4::IDENTITY,
             projection_matrix: Mat4::IDENTITY,
             aspect_ratio,
-            position: Vec3::new(0.0, 0.0, 1.0),
+            position: Vec3::new(0.0, 0.0, 3.0), // Move back for perspective
             target: Vec3::ZERO,
             up: Vec3::Y,
+            projection_mode: ProjectionMode::Perspective,
         };
 
         camera.update_matrices();
@@ -31,15 +40,35 @@ impl Camera {
 
     /// Create an orthographic camera suitable for 2D rendering
     pub fn orthographic_2d(aspect_ratio: f32) -> Self {
-        let mut camera = Self::new(aspect_ratio);
-        camera.position = Vec3::new(0.0, 0.0, 1.0);
-        camera.target = Vec3::ZERO;
+        let mut camera = Self {
+            view_matrix: Mat4::IDENTITY,
+            projection_matrix: Mat4::IDENTITY,
+            aspect_ratio,
+            position: Vec3::new(0.0, 0.0, 1.0),
+            target: Vec3::ZERO,
+            up: Vec3::Y,
+            projection_mode: ProjectionMode::Orthographic,
+        };
         camera.update_matrices();
         camera
     }
 
     pub fn set_aspect_ratio(&mut self, aspect_ratio: f32) {
         self.aspect_ratio = aspect_ratio;
+        self.update_matrices();
+    }
+
+    pub fn set_projection_mode(&mut self, mode: ProjectionMode) {
+        self.projection_mode = mode;
+        // Adjust camera position for different projection modes
+        match mode {
+            ProjectionMode::Perspective => {
+                self.position = Vec3::new(0.0, 0.0, 3.0); // Move back for perspective
+            }
+            ProjectionMode::Orthographic => {
+                self.position = Vec3::new(0.0, 0.0, 1.0); // Closer for orthographic
+            }
+        }
         self.update_matrices();
     }
 
@@ -58,15 +87,29 @@ impl Camera {
     }
 
     fn update_matrices(&mut self) {
-        // For 2D triangle rendering, use orthographic projection
-        self.projection_matrix = Mat4::orthographic_rh(
-            -self.aspect_ratio,
-            self.aspect_ratio, // left, right
-            -1.0,
-            1.0, // bottom, top
-            -1.0,
-            1.0, // near, far
-        );
+        // Choose projection based on mode
+        self.projection_matrix = match self.projection_mode {
+            ProjectionMode::Orthographic => {
+                // Orthographic projection - objects don't get smaller with distance
+                Mat4::orthographic_rh(
+                    -self.aspect_ratio,
+                    self.aspect_ratio, // left, right
+                    -1.0,
+                    1.0, // bottom, top
+                    -10.0,
+                    10.0, // near, far (extended range)
+                )
+            }
+            ProjectionMode::Perspective => {
+                // Perspective projection - objects get smaller with distance
+                Mat4::perspective_rh(
+                    60.0_f32.to_radians(), // 60-degree field of view
+                    self.aspect_ratio,
+                    0.1,   // near plane
+                    100.0, // far plane
+                )
+            }
+        };
 
         self.view_matrix = Mat4::look_at_rh(self.position, self.target, self.up);
     }
