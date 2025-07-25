@@ -1,5 +1,5 @@
 //! Renderable objects and graphics primitives
-//! 
+//!
 //! This module provides the core traits and implementations for objects
 //! that can be rendered to the screen.
 
@@ -44,7 +44,7 @@ impl Triangle {
 
 impl Renderable for Triangle {
     fn update(&mut self, delta: f32) {
-        self.transform.rotate_degrees(0.0, 0.0, 60.0 * delta);
+        self.transform.rotate_degrees(0.0, 0.0, 15.0 * delta);
     }
 
     fn get_transform(&self) -> &Transform {

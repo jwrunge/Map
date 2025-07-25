@@ -1,5 +1,4 @@
 mod app;
-mod app_v2; // New architecture version
 mod renderable;
 mod renderer;
 mod scene;

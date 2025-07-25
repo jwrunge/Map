@@ -1,8 +1,7 @@
-use std::time::Instant;
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
-use crate::renderable::{Triangle, Renderable, VertexProvider};
+use crate::renderable::{Renderable, Triangle, VertexProvider};
 
 pub struct State {
     pub surface: wgpu::Surface<'static>,
@@ -16,7 +15,6 @@ pub struct State {
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
     pub num_vertices: u32,
-    pub start_time: Instant,
     pub tri: Triangle,
 }
 
@@ -178,7 +176,6 @@ impl State {
             render_pipeline,
             vertex_buffer,
             num_vertices: tri.vertex_count() as u32,
-            start_time: Instant::now(),
             uniform_buffer,
             uniform_bind_group,
             tri,
