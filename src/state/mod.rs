@@ -2,6 +2,8 @@ use std::time::Instant;
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
+use crate::renderable::{Triangle, renderable::Renderable, vertex::VertexProvider};
+
 pub struct State {
     pub surface: wgpu::Surface<'static>,
     pub device: wgpu::Device,
@@ -11,8 +13,11 @@ pub struct State {
     pub window: std::sync::Arc<Window>,
     pub render_pipeline: wgpu::RenderPipeline,
     pub vertex_buffer: wgpu::Buffer,
+    pub uniform_buffer: wgpu::Buffer,
+    pub uniform_bind_group: wgpu::BindGroup,
     pub num_vertices: u32,
     pub start_time: Instant,
+    pub tri: Triangle,
 }
 
 impl State {
@@ -21,6 +26,7 @@ impl State {
     }
 
     async fn create_state(window: std::sync::Arc<Window>) -> State {
+        let tri = Triangle::new();
         let size = window.inner_size();
 
         // The instance is a handle to our GPU
@@ -77,6 +83,36 @@ impl State {
         };
 
         surface.configure(&device, &config);
+        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Transform Uniform Buffer"),
+            size: 64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let uniform_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Transform Bind Group Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Transform Bind Group"),
+            layout: &uniform_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            }],
+        });
 
         // Load shader
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -86,7 +122,7 @@ impl State {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[],
+                bind_group_layouts: &[&uniform_bind_group_layout],
                 push_constant_ranges: &[],
             });
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -128,7 +164,7 @@ impl State {
         });
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&super::renderable::vertex::VERTICES),
+            contents: tri.buffer_contents(),
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -141,8 +177,11 @@ impl State {
             size,
             render_pipeline,
             vertex_buffer,
-            num_vertices: super::renderable::vertex::VERTICES.len() as u32,
+            num_vertices: tri.vertex_count() as u32,
             start_time: Instant::now(),
+            uniform_buffer,
+            uniform_bind_group,
+            tri,
         }
     }
 
@@ -154,47 +193,22 @@ impl State {
             self.surface.configure(&self.device, &self.config);
         }
     }
-
     pub fn update(&mut self) {
-        // Calculate elapsed time in seconds
-        let elapsed = self.start_time.elapsed().as_secs_f32();
-        let rotation_speed = 1.0; // Radians per second
-        let angle = elapsed * rotation_speed;
-
-        // Create rotated vertices
-        let cos_a = angle.cos();
-        let sin_a = angle.sin();
-
-        let rotated_vertices = super::vertices::VERTICES
-            .iter()
-            .map(|vertex| {
-                // Apply 2D rotation matrix around Z axis
-                let x = vertex.position[0];
-                let y = vertex.position[1];
-                let z = vertex.position[2];
-
-                Vertex {
-                    position: [
-                        x * cos_a - y * sin_a, // Rotated X
-                        x * sin_a + y * cos_a, // Rotated Y
-                        z,                     // Z unchanged
-                    ],
-                    color: vertex.color,
-                }
-            })
-            .collect::<Vec<_>>();
-
-        // Update the vertex buffer with new positions
-        self.queue.write_buffer(
-            &self.vertex_buffer,
-            0,
-            bytemuck::cast_slice(&rotated_vertices),
-        );
+        // You may want to pass a real delta time here; for now, use a placeholder value
+        self.tri.update(0.016)
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         // Update animation before rendering
         self.update();
+
+        // Get transform matrix and send to GPU
+        let transform_matrix = self.tri.get_transform().to_matrix();
+        self.queue.write_buffer(
+            &self.uniform_buffer,
+            0,
+            bytemuck::cast_slice(transform_matrix.as_ref()),
+        );
 
         let output = self.surface.get_current_texture()?;
         let view = output
@@ -208,7 +222,7 @@ impl State {
             });
 
         {
-            let mut _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
@@ -229,9 +243,10 @@ impl State {
                 timestamp_writes: None,
             });
 
-            _render_pass.set_pipeline(&self.render_pipeline);
-            _render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            _render_pass.draw(0..self.num_vertices, 0..1);
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_bind_group(0, &self.uniform_bind_group, &[]); // Bind the uniform!
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.draw(0..self.num_vertices, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));

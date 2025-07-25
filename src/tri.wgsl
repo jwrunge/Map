@@ -8,15 +8,20 @@ struct VertexOutput {
     @location(0) color: vec3<f32>,
 }
 
+@group(0) @binding(0) var<uniform> transform: mat4x4<f32>;
+
 @vertex
-fn vs_main(model: VertexInput) -> VertexOutput {
+fn vs_main(
+    input: VertexInput,
+) -> VertexOutput {
     var out: VertexOutput;
-    out.color = model.color;
-    out.clip_position = vec4<f32>(model.position, 1.0);
+    // Apply transform matrix to position
+    out.clip_position = transform * vec4<f32>(input.position, 1.0);
+    out.color = input.color;  // Pass color through
     return out;
 }
 
-@fragment  
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4<f32>(in.color, 1.0);
+@fragment
+fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    return vec4<f32>(input.color, 1.0);  // Use the vertex color
 }
