@@ -65,7 +65,7 @@ impl State {
         };
 
         self.renderer
-            .camera
+            .camera_mut()
             .set_projection_mode(self.projection_mode);
     }
 

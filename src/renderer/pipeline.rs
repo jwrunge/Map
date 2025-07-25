@@ -217,4 +217,35 @@ impl RenderPipeline {
         );
         pipeline
     }
+
+    /// Create pipeline with core method name for RenderCore compatibility
+    pub fn new_with_config_core(
+        device: &wgpu::Device,
+        uniform_bind_group_layout: &wgpu::BindGroupLayout,
+        format: wgpu::TextureFormat,
+        config: RenderConfig,
+        width: u32,
+        height: u32,
+    ) -> Self {
+        let (pipeline, multisampled_framebuffer) = Self::create_pipeline_with_config(
+            device,
+            uniform_bind_group_layout,
+            format,
+            &config,
+            width,
+            height,
+        );
+        Self {
+            pipeline,
+            config,
+            multisampled_framebuffer,
+        }
+    }
+
+    /// Get the current texture format used by this pipeline
+    pub fn get_format(&self) -> wgpu::TextureFormat {
+        // For now, return the common format - in a full implementation,
+        // this would be stored as part of the pipeline state
+        wgpu::TextureFormat::Bgra8UnormSrgb
+    }
 }
