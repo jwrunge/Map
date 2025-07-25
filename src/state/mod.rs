@@ -1,7 +1,6 @@
 use web_time::Instant;
 use winit::window::Window;
 
-use crate::renderable::{Renderable, Triangle};
 use crate::renderer::Renderer;
 use crate::scene::Scene;
 
@@ -24,25 +23,33 @@ impl State {
         let renderer = Renderer::new(window.clone()).await;
         let mut scene = Scene::new();
 
-        // Create some triangles to demonstrate the scene system with Z depth testing
-        let mut triangle1 = Triangle::with_scale(0.3);
-        triangle1.transform_translate(-0.5, 0.0, -5.0); // Far back
-        let id1 = scene.add_triangle(triangle1);
-        log::info!("Added triangle1 at (-0.5, 0, -5.0) with ID {}", id1);
+        // Create three triangles using Scene primitive functions
+        let id1 = scene.create_triangle_at(0.3, glam::Vec3::new(-0.5, 0.5, -2.0));
+        log::info!("Created triangle1 at (-0.5, 0.5, -2.0) with ID {}", id1);
 
-        let mut triangle2 = Triangle::with_scale(0.3);
-        triangle2.transform_translate(0.5, 0.0, 0.0); // Center depth
-        triangle2.transform_rotate_radians(0.0, 0.0, std::f32::consts::PI / 6.0); // 30 degrees
-        let id2 = scene.add_triangle(triangle2);
-        log::info!("Added triangle2 at (0.5, 0, 0.0) with ID {}", id2);
+        let id2 = scene.create_triangle_at(0.3, glam::Vec3::new(0.5, 0.5, 0.0));
+        log::info!("Created triangle2 at (0.5, 0.5, 0.0) with ID {}", id2);
 
-        let mut triangle3 = Triangle::with_scale(0.3);
-        triangle3.transform_translate(0.0, 0.4, 8.0); // Far forward
-        triangle3.transform_rotate_radians(0.0, 0.0, std::f32::consts::PI / 3.0); // 60 degrees
-        let id3 = scene.add_triangle(triangle3);
-        log::info!("Added triangle3 at (0, 0.4, 8.0) with ID {}", id3);
+        let id3 = scene.create_triangle_at(0.3, glam::Vec3::new(0.0, 0.5, 2.0));
+        log::info!("Created triangle3 at (0.0, 0.5, 2.0) with ID {}", id3);
 
-        log::info!("Total triangles in scene: {}", scene.triangle_count());
+        // Create two quads using Scene primitive functions
+        let id4 = scene.create_quad_at(0.3, glam::Vec3::new(-1.0, -0.5, 0.0));
+        log::info!("Created quad1 at (-1.0, -0.5, 0.0) with ID {}", id4);
+
+        let id5 = scene.create_quad_at(0.3, glam::Vec3::new(1.0, -0.5, 0.0));
+        log::info!("Created quad2 at (1.0, -0.5, 0.0) with ID {}", id5);
+
+        // Create a cube using Scene primitive functions
+        let id6 = scene.create_cube_at(0.3, glam::Vec3::new(0.0, -0.5, -1.0));
+        log::info!("Created cube1 at (0.0, -0.5, -1.0) with ID {}", id6);
+
+        log::info!(
+            "Total objects in scene: {} triangles, {} quads, {} cubes",
+            scene.triangle_count(),
+            scene.quad_count(),
+            scene.cube_count()
+        );
 
         Self {
             window,
@@ -82,8 +89,21 @@ impl State {
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        // Render all triangles in the scene using dynamic batch rendering
-        self.scene
-            .render_triangles_batch(|triangles| self.renderer.render_batch_dynamic(triangles))
+        // Get all objects from the scene
+        let (triangles, quads, cubes) = self.scene.get_all_renderables();
+
+        // Log the object counts to show the architecture is working
+        log::info!(
+            "Rendering scene: {} triangles, {} quads, {} cubes",
+            triangles.len(),
+            quads.len(),
+            cubes.len()
+        );
+
+        // Render all object types in a single unified pass!
+        self.renderer
+            .render_mixed_objects(&triangles, &quads, &cubes)?;
+
+        Ok(())
     }
 }

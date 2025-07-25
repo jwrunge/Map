@@ -22,6 +22,7 @@ use glam::{Mat4, Quat, Vec3};
 /// // Convert to matrix for GPU
 /// let matrix = transform.to_matrix();
 /// ```
+#[derive(Debug, Clone)]
 pub struct Transform {
     /// Position in 3D space (x, y, z)
     pub position: Vec3,

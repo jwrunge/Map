@@ -3,14 +3,16 @@
 //! Provides a high-level interface for managing multiple renderable objects
 
 use std::collections::HashMap;
-use crate::renderable::{Renderable, Triangle};
+use crate::renderable::{Renderable, Triangle, Quad, Cube};
 
 pub type EntityId = u32;
 
 /// Manages a collection of renderable entities
-/// For now, this is simplified to work with concrete types
+/// For now, this supports triangles, quads, and cubes
 pub struct Scene {
     triangles: HashMap<EntityId, Triangle>,
+    quads: HashMap<EntityId, Quad>,
+    cubes: HashMap<EntityId, Cube>,
     next_id: EntityId,
 }
 
@@ -18,6 +20,8 @@ impl Scene {
     pub fn new() -> Self {
         Self {
             triangles: HashMap::new(),
+            quads: HashMap::new(),
+            cubes: HashMap::new(),
             next_id: 0,
         }
     }
@@ -26,6 +30,22 @@ impl Scene {
     pub fn add_triangle(&mut self, triangle: Triangle) -> EntityId {
         let id = self.next_id;
         self.triangles.insert(id, triangle);
+        self.next_id += 1;
+        id
+    }
+    
+    /// Add a quad to the scene and return its ID
+    pub fn add_quad(&mut self, quad: Quad) -> EntityId {
+        let id = self.next_id;
+        self.quads.insert(id, quad);
+        self.next_id += 1;
+        id
+    }
+    
+    /// Add a cube to the scene and return its ID
+    pub fn add_cube(&mut self, cube: Cube) -> EntityId {
+        let id = self.next_id;
+        self.cubes.insert(id, cube);
         self.next_id += 1;
         id
     }
@@ -45,6 +65,12 @@ impl Scene {
         for triangle in self.triangles.values_mut() {
             triangle.update(delta_time);
         }
+        for quad in self.quads.values_mut() {
+            quad.update(delta_time);
+        }
+        for cube in self.cubes.values_mut() {
+            cube.update(delta_time);
+        }
     }
     
     /// Render all triangles in the scene using batch rendering
@@ -55,6 +81,48 @@ impl Scene {
         let triangles: Vec<&Triangle> = self.triangles.values().collect();
         log::debug!("Batch rendering {} triangles", triangles.len());
         render_fn(&triangles)
+    }
+
+    /// Render all quads in the scene using batch rendering
+    pub fn render_quads_batch<F>(&self, mut render_fn: F) -> Result<(), wgpu::SurfaceError>
+    where
+        F: FnMut(&[&Quad]) -> Result<(), wgpu::SurfaceError>,
+    {
+        let quads: Vec<&Quad> = self.quads.values().collect();
+        log::debug!("Batch rendering {} quads", quads.len());
+        render_fn(&quads)
+    }
+
+    /// Render all cubes in the scene using batch rendering
+    pub fn render_cubes_batch<F>(&self, mut render_fn: F) -> Result<(), wgpu::SurfaceError>
+    where
+        F: FnMut(&[&Cube]) -> Result<(), wgpu::SurfaceError>,
+    {
+        let cubes: Vec<&Cube> = self.cubes.values().collect();
+        log::debug!("Batch rendering {} cubes", cubes.len());
+        render_fn(&cubes)
+    }
+
+    /// Render all objects in the scene (triangles, quads, and cubes)
+    pub fn render_all<F>(&self, mut render_fn: F) -> Result<(), wgpu::SurfaceError>
+    where
+        F: FnMut(&[&Triangle]) -> Result<(), wgpu::SurfaceError>
+            + FnMut(&[&Quad]) -> Result<(), wgpu::SurfaceError>  
+            + FnMut(&[&Cube]) -> Result<(), wgpu::SurfaceError>,
+    {
+        // Render each object type in separate batches
+        self.render_triangles_batch(&mut render_fn)?;
+        self.render_quads_batch(&mut render_fn)?;
+        self.render_cubes_batch(&mut render_fn)?;
+        Ok(())
+    }
+
+    /// Get all renderable objects as collections for debugging and unified rendering
+    pub fn get_all_renderables(&self) -> (Vec<&Triangle>, Vec<&Quad>, Vec<&Cube>) {
+        let triangles: Vec<&Triangle> = self.triangles.values().collect();
+        let quads: Vec<&Quad> = self.quads.values().collect();
+        let cubes: Vec<&Cube> = self.cubes.values().collect();
+        (triangles, quads, cubes)
     }
 
     /// Render all triangles with mutable access for dirty flag management
@@ -70,6 +138,81 @@ impl Scene {
     /// Get the number of triangles in the scene
     pub fn triangle_count(&self) -> usize {
         self.triangles.len()
+    }
+
+    /// Get the number of quads in the scene
+    pub fn quad_count(&self) -> usize {
+        self.quads.len()
+    }
+
+    /// Get the number of cubes in the scene
+    pub fn cube_count(&self) -> usize {
+        self.cubes.len()
+    }
+    
+    // === 3D Primitive Creation Functions ===
+    
+    /// Create a triangle primitive and add it to the scene
+    pub fn create_triangle(&mut self, scale: f32) -> EntityId {
+        let triangle = Triangle::with_scale(scale);
+        self.add_triangle(triangle)
+    }
+    
+    /// Create a triangle primitive at a specific position
+    pub fn create_triangle_at(&mut self, scale: f32, position: glam::Vec3) -> EntityId {
+        let mut triangle = Triangle::with_scale(scale);
+        triangle.transform_set_position(position);
+        self.add_triangle(triangle)
+    }
+    
+    /// Create a triangle primitive with custom transform
+    pub fn create_triangle_with_transform(&mut self, scale: f32, position: glam::Vec3, rotation: glam::Vec3) -> EntityId {
+        let mut triangle = Triangle::with_scale(scale);
+        triangle.transform_set_position(position);
+        triangle.transform_rotate_degrees(rotation.x, rotation.y, rotation.z);
+        self.add_triangle(triangle)
+    }
+
+    /// Create a quad primitive and add it to the scene
+    pub fn create_quad(&mut self, size: f32) -> EntityId {
+        let quad = Quad::with_size(size, size);  // Square quad
+        self.add_quad(quad)
+    }
+    
+    /// Create a quad primitive at a specific position
+    pub fn create_quad_at(&mut self, size: f32, position: glam::Vec3) -> EntityId {
+        let mut quad = Quad::with_size(size, size);  // Square quad
+        quad.transform_set_position(position);
+        self.add_quad(quad)
+    }
+    
+    /// Create a quad primitive with custom transform
+    pub fn create_quad_with_transform(&mut self, size: f32, position: glam::Vec3, rotation: glam::Vec3) -> EntityId {
+        let mut quad = Quad::with_size(size, size);  // Square quad
+        quad.transform_set_position(position);
+        quad.transform_rotate_degrees(rotation.x, rotation.y, rotation.z);
+        self.add_quad(quad)
+    }
+
+    /// Create a cube primitive and add it to the scene
+    pub fn create_cube(&mut self, size: f32) -> EntityId {
+        let cube = Cube::with_size(size);
+        self.add_cube(cube)
+    }
+    
+    /// Create a cube primitive at a specific position
+    pub fn create_cube_at(&mut self, size: f32, position: glam::Vec3) -> EntityId {
+        let mut cube = Cube::with_size(size);
+        cube.transform_set_position(position);
+        self.add_cube(cube)
+    }
+    
+    /// Create a cube primitive with custom transform
+    pub fn create_cube_with_transform(&mut self, size: f32, position: glam::Vec3, rotation: glam::Vec3) -> EntityId {
+        let mut cube = Cube::with_size(size);
+        cube.transform_set_position(position);
+        cube.transform_rotate_degrees(rotation.x, rotation.y, rotation.z);
+        self.add_cube(cube)
     }
 }
 

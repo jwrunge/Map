@@ -98,6 +98,56 @@ impl VertexBufferCache {
         result
     }
 
+    /// Process mixed object types by converting to trait objects
+    /// This works around borrowing constraints by taking all objects at once
+    pub fn get_or_create_mixed_buffers(
+        &mut self,
+        objects: &[&dyn VertexProvider],
+        device: &wgpu::Device,
+    ) -> Vec<(&wgpu::Buffer, u32)> {
+        let mut result = Vec::new();
+
+        // First pass: create any missing buffers
+        for object in objects.iter() {
+            let contents = object.buffer_contents();
+            let hash = Self::hash_vertex_data(contents);
+
+            // Check if we already have this buffer cached
+            if let Some(cached) = self.cache.get_mut(&hash) {
+                // Update the last used time
+                cached.last_used = Instant::now();
+            } else {
+                // Create new buffer
+                let vertex_count = object.vertex_count() as u32;
+                let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Mixed Cached Vertex Buffer"),
+                    contents,
+                    usage: wgpu::BufferUsages::VERTEX,
+                });
+
+                let cached_buffer = CachedVertexBuffer {
+                    buffer,
+                    vertex_count,
+                    last_used: Instant::now(),
+                };
+
+                self.cache.insert(hash, cached_buffer);
+            }
+        }
+
+        // Second pass: collect all the references
+        for object in objects.iter() {
+            let contents = object.buffer_contents();
+            let hash = Self::hash_vertex_data(contents);
+
+            if let Some(cached) = self.cache.get(&hash) {
+                result.push((&cached.buffer, cached.vertex_count));
+            }
+        }
+
+        result
+    }
+
     /// Hash vertex data for cache key
     fn hash_vertex_data(data: &[u8]) -> VertexDataHash {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();

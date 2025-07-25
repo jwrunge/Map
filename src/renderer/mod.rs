@@ -9,7 +9,7 @@ pub mod gpu_context;
 pub mod pipeline;
 pub mod vertex_cache;
 
-use crate::renderable::{Renderable, VertexProvider};
+use crate::renderable::{Renderable, VertexProvider, Triangle, Quad, Cube};
 use winit::window::Window;
 
 pub use camera::Camera;
@@ -149,6 +149,155 @@ impl Renderer {
 
             // Note: Cannot mark objects as clean since renderables is immutable
             // The caller should handle dirty flag management separately
+        }
+
+        self.gpu.queue.submit(std::iter::once(encoder.finish()));
+        output.present();
+
+        // Periodic cache cleanup
+        self.vertex_cache.cleanup_old_entries();
+
+        Ok(())
+    }
+
+    /// Render mixed object types (triangles, quads, cubes) in a single frame
+    /// This method works around Rust borrowing constraints by collecting data first
+    pub fn render_mixed_objects(
+        &mut self,
+        triangles: &[&Triangle],
+        quads: &[&Quad], 
+        cubes: &[&Cube],
+    ) -> Result<(), wgpu::SurfaceError> {
+        // If all collections are empty, nothing to render
+        if triangles.is_empty() && quads.is_empty() && cubes.is_empty() {
+            return Ok(());
+        }
+
+        // Clear frame data
+        self.dynamic_uniforms.reset_frame();
+
+        let output = self.gpu.surface.get_current_texture()?;
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut encoder = self
+            .gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Mixed Objects Render Encoder"),
+            });
+
+        // Check if any objects are dirty
+        let mut has_updates = false;
+        for triangle in triangles {
+            if triangle.is_dirty() {
+                has_updates = true;
+                break;
+            }
+        }
+        if !has_updates {
+            for quad in quads {
+                if quad.is_dirty() {
+                    has_updates = true;
+                    break;
+                }
+            }
+        }
+        if !has_updates {
+            for cube in cubes {
+                if cube.is_dirty() {
+                    has_updates = true;
+                    break;
+                }
+            }
+        }
+
+        if has_updates {
+            // Collect transform matrices from all objects in order
+            let mut all_matrices = Vec::new();
+            
+            // Add triangle matrices first
+            for triangle in triangles {
+                all_matrices.push(self.camera.get_view_projection_matrix() * triangle.get_matrix());
+            }
+            // Add quad matrices second
+            for quad in quads {
+                all_matrices.push(self.camera.get_view_projection_matrix() * quad.get_matrix());
+            }
+            // Add cube matrices third
+            for cube in cubes {
+                all_matrices.push(self.camera.get_view_projection_matrix() * cube.get_matrix());
+            }
+
+            // Upload all matrices to dynamic uniform buffer
+            let object_data = self
+                .dynamic_uniforms
+                .upload_matrices(&self.gpu.queue, &all_matrices);
+
+            // Collect all objects as trait objects for unified vertex buffer processing
+            let mut all_objects: Vec<&dyn VertexProvider> = Vec::new();
+            
+            // Add objects in the same order as matrices
+            for triangle in triangles {
+                all_objects.push(*triangle);
+            }
+            for quad in quads {
+                all_objects.push(*quad);
+            }
+            for cube in cubes {
+                all_objects.push(*cube);
+            }
+
+            // Create vertex buffers for all objects in one call
+            let all_vertex_buffers = self.vertex_cache.get_or_create_mixed_buffers(&all_objects, &self.gpu.device);
+
+            // Single render pass for all objects
+            if !all_vertex_buffers.is_empty() && !object_data.is_empty() {
+                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Mixed Objects Render Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 0.1,
+                                g: 0.2,
+                                b: 0.3,
+                                a: 1.0,
+                            }),
+                            store: wgpu::StoreOp::Store,
+                        },
+                        depth_slice: None,
+                    })],
+                    depth_stencil_attachment: None,
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                });
+
+                render_pass.set_pipeline(&self.pipeline.pipeline);
+
+                // Render each object with its dynamic offset
+                for (index, vertex_buffer) in all_vertex_buffers.iter().enumerate() {
+                    if index < object_data.len() {
+                        let (bind_group, dynamic_offset) = &object_data[index];
+
+                        // Set vertex buffer
+                        render_pass.set_vertex_buffer(0, vertex_buffer.0.slice(..));
+
+                        // Set uniform bind group with dynamic offset
+                        render_pass.set_bind_group(0, *bind_group, &[*dynamic_offset]);
+
+                        // Draw
+                        let vertex_count = vertex_buffer.1;
+                        render_pass.draw(0..vertex_count, 0..1);
+                    }
+                }
+                
+                // Log rendering info
+                log::info!("🎨 Rendered {} triangles, {} quads, {} cubes in single pass", 
+                          triangles.len(), quads.len(), cubes.len());
+            }
         }
 
         self.gpu.queue.submit(std::iter::once(encoder.finish()));

@@ -5,11 +5,121 @@
 
 use glam;
 
+pub mod mesh;
 mod transforms;
 pub mod vertex;
 
+pub use mesh::{CubeMesh, Mesh, QuadMesh, TriangleMesh};
 pub use transforms::Transform;
 pub use vertex::{Vertex, VertexProvider};
+
+/// Quad object (rectangle made of two triangles)
+#[derive(Debug, Clone)]
+pub struct Quad {
+    mesh: QuadMesh,
+    transform: Transform,
+    is_dirty: bool,
+}
+
+impl Quad {
+    /// Create a new quad with the given dimensions
+    pub fn with_size(width: f32, height: f32) -> Self {
+        Self {
+            mesh: QuadMesh::new(width, height),
+            transform: Transform::new(),
+            is_dirty: true,
+        }
+    }
+}
+
+/// Cube object (3D cube made of 12 triangles)
+#[derive(Debug, Clone)]
+pub struct Cube {
+    mesh: CubeMesh,
+    transform: Transform,
+    is_dirty: bool,
+}
+
+impl Cube {
+    /// Create a new cube with the given size
+    pub fn with_size(size: f32) -> Self {
+        Self {
+            mesh: CubeMesh::new(size),
+            transform: Transform::new(),
+            is_dirty: true,
+        }
+    }
+}
+
+// Implement Renderable for Quad
+impl Renderable for Quad {
+    fn get_transform_mut(&mut self) -> &mut Transform {
+        &mut self.transform
+    }
+
+    fn get_transform(&self) -> &Transform {
+        &self.transform
+    }
+
+    fn get_matrix(&self) -> glam::Mat4 {
+        self.transform.to_matrix()
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.is_dirty
+    }
+
+    fn set_dirty(&mut self, dirty: bool) {
+        self.is_dirty = dirty;
+    }
+
+    fn update(&mut self, delta: f32) {
+        // Quad rotates around Y axis for variety
+        self.transform_rotate_degrees(0.0, 20.0 * delta, 0.0);
+    }
+}
+
+// Implement VertexProvider for Quad
+impl VertexProvider for Quad {
+    fn vertices(&self) -> &[Vertex] {
+        self.mesh.vertices()
+    }
+}
+
+// Implement Renderable for Cube
+impl Renderable for Cube {
+    fn get_transform_mut(&mut self) -> &mut Transform {
+        &mut self.transform
+    }
+
+    fn get_transform(&self) -> &Transform {
+        &self.transform
+    }
+
+    fn get_matrix(&self) -> glam::Mat4 {
+        self.transform.to_matrix()
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.is_dirty
+    }
+
+    fn set_dirty(&mut self, dirty: bool) {
+        self.is_dirty = dirty;
+    }
+
+    fn update(&mut self, delta: f32) {
+        // Cube rotates around X and Y axes for visual appeal
+        self.transform_rotate_degrees(30.0 * delta, 45.0 * delta, 0.0);
+    }
+}
+
+// Implement VertexProvider for Cube
+impl VertexProvider for Cube {
+    fn vertices(&self) -> &[Vertex] {
+        self.mesh.vertices()
+    }
+}
 
 /// Trait for objects that can be rendered and updated
 pub trait Renderable {
