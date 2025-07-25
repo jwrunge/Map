@@ -202,12 +202,26 @@ impl State {
         // Update animation before rendering
         self.update();
 
-        // Get transform matrix and send to GPU
+        // Get transform matrix and apply aspect ratio correction
         let transform_matrix = self.tri.get_transform().to_matrix();
+
+        // Create aspect ratio correction matrix
+        let aspect_ratio = self.config.width as f32 / self.config.height as f32;
+        let aspect_correction = if aspect_ratio > 1.0 {
+            // Wider than tall - compress horizontally
+            glam::Mat4::from_scale(glam::Vec3::new(1.0 / aspect_ratio, 1.0, 1.0))
+        } else {
+            // Taller than wide - compress vertically
+            glam::Mat4::from_scale(glam::Vec3::new(1.0, aspect_ratio, 1.0))
+        };
+
+        // Combine aspect correction with transform
+        let final_matrix = aspect_correction * transform_matrix;
+
         self.queue.write_buffer(
             &self.uniform_buffer,
             0,
-            bytemuck::cast_slice(transform_matrix.as_ref()),
+            bytemuck::cast_slice(final_matrix.as_ref()),
         );
 
         let output = self.surface.get_current_texture()?;
