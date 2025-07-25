@@ -1,4 +1,5 @@
 mod app;
+mod renderable;
 mod state;
 
 use winit::event_loop::EventLoop;

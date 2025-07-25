@@ -1,3 +1,5 @@
+use std::time::Instant;
+use wgpu::util::DeviceExt;
 use winit::window::Window;
 
 pub struct State {
@@ -7,6 +9,10 @@ pub struct State {
     pub config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
     pub window: std::sync::Arc<Window>,
+    pub render_pipeline: wgpu::RenderPipeline,
+    pub vertex_buffer: wgpu::Buffer,
+    pub num_vertices: u32,
+    pub start_time: Instant,
 }
 
 impl State {
@@ -72,6 +78,60 @@ impl State {
 
         surface.configure(&device, &config);
 
+        // Load shader
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Triangle Shader"), // Debug name (optional)
+            source: wgpu::ShaderSource::Wgsl(include_str!("../tri.wgsl").into()),
+        });
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[],
+                push_constant_ranges: &[],
+            });
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Render Pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[super::renderable::vertex::Vertex::desc()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                unclipped_depth: false,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+            cache: None,
+        });
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(&super::renderable::vertex::VERTICES),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+
         Self {
             window,
             surface,
@@ -79,6 +139,10 @@ impl State {
             queue,
             config,
             size,
+            render_pipeline,
+            vertex_buffer,
+            num_vertices: super::renderable::vertex::VERTICES.len() as u32,
+            start_time: Instant::now(),
         }
     }
 
@@ -91,9 +155,47 @@ impl State {
         }
     }
 
-    pub fn update(&mut self) {}
+    pub fn update(&mut self) {
+        // Calculate elapsed time in seconds
+        let elapsed = self.start_time.elapsed().as_secs_f32();
+        let rotation_speed = 1.0; // Radians per second
+        let angle = elapsed * rotation_speed;
+
+        // Create rotated vertices
+        let cos_a = angle.cos();
+        let sin_a = angle.sin();
+
+        let rotated_vertices = super::vertices::VERTICES
+            .iter()
+            .map(|vertex| {
+                // Apply 2D rotation matrix around Z axis
+                let x = vertex.position[0];
+                let y = vertex.position[1];
+                let z = vertex.position[2];
+
+                Vertex {
+                    position: [
+                        x * cos_a - y * sin_a, // Rotated X
+                        x * sin_a + y * cos_a, // Rotated Y
+                        z,                     // Z unchanged
+                    ],
+                    color: vertex.color,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        // Update the vertex buffer with new positions
+        self.queue.write_buffer(
+            &self.vertex_buffer,
+            0,
+            bytemuck::cast_slice(&rotated_vertices),
+        );
+    }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        // Update animation before rendering
+        self.update();
+
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -106,7 +208,7 @@ impl State {
             });
 
         {
-            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
@@ -126,7 +228,10 @@ impl State {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
-            // Just clear the background - no drawing commands
+
+            _render_pass.set_pipeline(&self.render_pipeline);
+            _render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            _render_pass.draw(0..self.num_vertices, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));

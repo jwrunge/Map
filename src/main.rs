@@ -1,5 +1,5 @@
-use map;
+use crate;
 
 fn main() {
-    map::run();
+    crate::run();
 }
