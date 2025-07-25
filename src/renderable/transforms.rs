@@ -9,7 +9,7 @@ use glam::{Mat4, Quat, Vec3};
 /// # Examples
 ///
 /// ```
-/// use crate::renderable::transforms::Transform;
+/// use map::Transform;
 /// use glam::Vec3;
 ///
 /// // Create a new transform at the origin
@@ -171,7 +171,7 @@ impl Transform {
     /// # Examples
     ///
     /// ```
-    /// # use crate::renderable::transforms::Transform;
+    /// # use map::Transform;
     /// let mut transform = Transform::new();
     /// transform.set_rotation_euler_degrees(0.0, 45.0, 0.0); // Turn 45° around Y
     /// ```
@@ -219,7 +219,7 @@ impl Transform {
     /// # Examples
     ///
     /// ```
-    /// # use crate::renderable::transforms::Transform;
+    /// # use map::Transform;
     /// let mut transform = Transform::new();
     /// transform.rotate_degrees(0.0, 10.0, 0.0); // Rotate 10° around Y
     /// transform.rotate_degrees(0.0, 10.0, 0.0); // Now rotated 20° total

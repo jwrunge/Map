@@ -356,3 +356,86 @@ impl<T: VertexProvider> VertexProvider for &T {
         (**self).vertices()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glam::Vec3;
+
+    #[test]
+    fn test_triangle_creation() {
+        let triangle = Triangle::new();
+        assert_eq!(triangle.vertices().len(), 3);
+    }
+
+    #[test]
+    fn test_triangle_with_scale() {
+        let triangle = Triangle::with_scale(2.0);
+        assert_eq!(triangle.vertices().len(), 3);
+    }
+
+    #[test]
+    fn test_quad_creation() {
+        let quad = Quad::with_size(1.0, 2.0);
+        assert_eq!(quad.vertices().len(), 6); // 2 triangles
+    }
+
+    #[test]
+    fn test_cube_creation() {
+        let cube = Cube::with_size(1.0);
+        assert_eq!(cube.vertices().len(), 36); // 12 triangles
+    }
+
+    #[test]
+    fn test_culling_modes() {
+        let triangle = Triangle::new();
+        let quad = Quad::with_size(1.0, 1.0);
+        let cube = Cube::with_size(1.0);
+        
+        assert_eq!(triangle.get_culling_mode(), CullingMode::None);
+        assert_eq!(quad.get_culling_mode(), CullingMode::None);
+        assert_eq!(cube.get_culling_mode(), CullingMode::BackfaceCulling);
+    }
+
+    #[test]
+    fn test_renderable_transform() {
+        let mut triangle = Triangle::new();
+        let initial_pos = triangle.transform.position;
+        
+        // Test position setting
+        let new_pos = Vec3::new(1.0, 2.0, 3.0);
+        triangle.transform_set_position(new_pos);
+        assert_eq!(triangle.transform.position, new_pos);
+        assert_ne!(triangle.transform.position, initial_pos);
+        
+        // Test that transform doesn't break vertex generation
+        assert_eq!(triangle.vertices().len(), 3);
+    }
+
+    #[test]
+    fn test_update_method() {
+        let mut triangle = Triangle::new();
+        let mut quad = Quad::with_size(1.0, 1.0);
+        let mut cube = Cube::with_size(1.0);
+        
+        // Should not panic
+        triangle.update(0.016);
+        quad.update(0.016);
+        cube.update(0.016);
+    }
+
+    #[test]
+    fn test_different_culling_groups() {
+        let triangle = Triangle::new();
+        let cube = Cube::with_size(1.0);
+        
+        // Triangles and cubes should have different culling modes
+        assert_ne!(triangle.get_culling_mode(), cube.get_culling_mode());
+        
+        // This validates the grouping logic that was causing render issues
+        assert_eq!(triangle.get_culling_mode(), CullingMode::None);
+        assert_eq!(cube.get_culling_mode(), CullingMode::BackfaceCulling);
+    }
+}
+
+

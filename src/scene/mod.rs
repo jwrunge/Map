@@ -221,3 +221,123 @@ impl Default for Scene {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glam::Vec3;
+
+    #[test]
+    fn test_scene_creation() {
+        let scene = Scene::new();
+        assert_eq!(scene.triangle_count(), 0);
+        assert_eq!(scene.quad_count(), 0);
+        assert_eq!(scene.cube_count(), 0);
+    }
+
+    #[test]
+    fn test_scene_default() {
+        let scene = Scene::default();
+        assert_eq!(scene.triangle_count(), 0);
+        assert_eq!(scene.quad_count(), 0);
+        assert_eq!(scene.cube_count(), 0);
+    }
+
+    #[test]
+    fn test_add_triangle() {
+        let mut scene = Scene::new();
+        let triangle = Triangle::new();
+        let id = scene.add_triangle(triangle);
+        
+        assert_eq!(id, 0);
+        assert_eq!(scene.triangle_count(), 1);
+        assert_eq!(scene.quad_count(), 0);
+        assert_eq!(scene.cube_count(), 0);
+    }
+
+    #[test]
+    fn test_add_quad() {
+        let mut scene = Scene::new();
+        let quad = Quad::with_size(1.0, 1.0);
+        let id = scene.add_quad(quad);
+        
+        assert_eq!(id, 0);
+        assert_eq!(scene.triangle_count(), 0);
+        assert_eq!(scene.quad_count(), 1);
+        assert_eq!(scene.cube_count(), 0);
+    }
+
+    #[test]
+    fn test_add_cube() {
+        let mut scene = Scene::new();
+        let cube = Cube::with_size(1.0);
+        let id = scene.add_cube(cube);
+        
+        assert_eq!(id, 0);
+        assert_eq!(scene.triangle_count(), 0);
+        assert_eq!(scene.quad_count(), 0);
+        assert_eq!(scene.cube_count(), 1);
+    }
+
+    #[test]
+    fn test_entity_id_sequencing() {
+        let mut scene = Scene::new();
+        
+        let triangle_id = scene.add_triangle(Triangle::new());
+        let quad_id = scene.add_quad(Quad::with_size(1.0, 1.0));
+        let cube_id = scene.add_cube(Cube::with_size(1.0));
+        
+        assert_eq!(triangle_id, 0);
+        assert_eq!(quad_id, 1);
+        assert_eq!(cube_id, 2);
+    }
+
+    #[test]
+    fn test_create_triangle_methods() {
+        let mut scene = Scene::new();
+        
+        // Test basic triangle creation
+        let _id1 = scene.create_triangle(2.0);
+        assert_eq!(scene.triangle_count(), 1);
+        
+        // Test triangle at specific position
+        let position = Vec3::new(5.0, 10.0, 15.0);
+        let _id2 = scene.create_triangle_at(1.5, position);
+        assert_eq!(scene.triangle_count(), 2);
+        
+        // Test triangle with custom transform
+        let rotation = Vec3::new(45.0, 90.0, 180.0);
+        let _id3 = scene.create_triangle_with_transform(1.0, position, rotation);
+        assert_eq!(scene.triangle_count(), 3);
+    }
+
+    #[test]
+    fn test_get_all_renderables() {
+        let mut scene = Scene::new();
+        
+        scene.add_triangle(Triangle::new());
+        scene.add_triangle(Triangle::new());
+        scene.add_quad(Quad::with_size(1.0, 1.0));
+        scene.add_cube(Cube::with_size(1.0));
+        scene.add_cube(Cube::with_size(1.0));
+        scene.add_cube(Cube::with_size(1.0));
+        
+        let (triangles, quads, cubes) = scene.get_all_renderables();
+        
+        assert_eq!(triangles.len(), 2);
+        assert_eq!(quads.len(), 1);
+        assert_eq!(cubes.len(), 3);
+    }
+
+    #[test]
+    fn test_update_all_entities() {
+        let mut scene = Scene::new();
+        
+        scene.add_triangle(Triangle::new());
+        scene.add_quad(Quad::with_size(1.0, 1.0));
+        scene.add_cube(Cube::with_size(1.0));
+        
+        // This should not panic - validates that update() can be called
+        scene.update(0.016); // 60 FPS delta time
+    }
+}

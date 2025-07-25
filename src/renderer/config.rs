@@ -140,3 +140,109 @@ impl RenderConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_render_config_default() {
+        let config = RenderConfig::default();
+        assert_eq!(config.antialiasing, AntialiasingMode::Msaa4x);
+        assert_eq!(config.culling, CullingMode::BackfaceCulling);
+        assert_eq!(config.alpha_blending, false);
+    }
+
+    #[test]
+    fn test_render_config_2d() {
+        let config = RenderConfig::for_2d();
+        assert_eq!(config.antialiasing, AntialiasingMode::Msaa4x);
+        assert_eq!(config.culling, CullingMode::None);
+        assert_eq!(config.alpha_blending, true);
+    }
+
+    #[test]
+    fn test_render_config_3d() {
+        let config = RenderConfig::for_3d();
+        assert_eq!(config.antialiasing, AntialiasingMode::Msaa4x);
+        assert_eq!(config.culling, CullingMode::BackfaceCulling);
+        assert_eq!(config.alpha_blending, false);
+    }
+
+    #[test]
+    fn test_render_config_performance() {
+        let config = RenderConfig::performance();
+        assert_eq!(config.antialiasing, AntialiasingMode::None);
+        assert_eq!(config.culling, CullingMode::BackfaceCulling);
+        assert_eq!(config.alpha_blending, false);
+    }
+
+    #[test]
+    fn test_antialiasing_mode_sample_count() {
+        assert_eq!(AntialiasingMode::None.sample_count(), 1);
+        assert_eq!(AntialiasingMode::Msaa2x.sample_count(), 2);
+        assert_eq!(AntialiasingMode::Msaa4x.sample_count(), 4);
+        assert_eq!(AntialiasingMode::Msaa8x.sample_count(), 8);
+    }
+
+    #[test]
+    fn test_antialiasing_mode_is_multisampled() {
+        assert_eq!(AntialiasingMode::None.is_multisampled(), false);
+        assert_eq!(AntialiasingMode::Msaa2x.is_multisampled(), true);
+        assert_eq!(AntialiasingMode::Msaa4x.is_multisampled(), true);
+        assert_eq!(AntialiasingMode::Msaa8x.is_multisampled(), true);
+    }
+
+    #[test]
+    fn test_culling_mode_variants() {
+        let none = CullingMode::None;
+        let backface = CullingMode::BackfaceCulling;
+        let frontface = CullingMode::FrontfaceCulling;
+        
+        // Test equality
+        assert_eq!(none, CullingMode::None);
+        assert_eq!(backface, CullingMode::BackfaceCulling);
+        assert_eq!(frontface, CullingMode::FrontfaceCulling);
+        assert_ne!(none, backface);
+        assert_ne!(backface, frontface);
+    }
+
+    #[test]
+    fn test_culling_mode_to_wgpu() {
+        assert_eq!(CullingMode::None.to_wgpu(), None);
+        assert_eq!(CullingMode::BackfaceCulling.to_wgpu(), Some(wgpu::Face::Back));
+        assert_eq!(CullingMode::FrontfaceCulling.to_wgpu(), Some(wgpu::Face::Front));
+    }
+
+    #[test]
+    fn test_config_modification() {
+        let mut config = RenderConfig::default();
+        
+        config.antialiasing = AntialiasingMode::None;
+        assert_eq!(config.antialiasing, AntialiasingMode::None);
+        
+        config.culling = CullingMode::None;
+        assert_eq!(config.culling, CullingMode::None);
+        
+        config.alpha_blending = true;
+        assert_eq!(config.alpha_blending, true);
+    }
+
+    #[test]
+    fn test_msaa_compatibility_scenarios() {
+        // Test scenarios that caused the original encoder validation error
+        let configs = [
+            RenderConfig::default(),
+            RenderConfig::for_2d(),
+            RenderConfig::for_3d(),
+            RenderConfig::performance(),
+        ];
+        
+        for config in &configs {
+            // Verify sample count is valid
+            let sample_count = config.antialiasing.sample_count();
+            assert!(sample_count >= 1 && sample_count <= 8);
+            assert!(sample_count.is_power_of_two());
+        }
+    }
+}
