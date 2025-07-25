@@ -2,7 +2,7 @@ use std::time::Instant;
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
-use crate::renderable::{Triangle, renderable::Renderable, vertex::VertexProvider};
+use crate::renderable::{Triangle, Renderable, VertexProvider};
 
 pub struct State {
     pub surface: wgpu::Surface<'static>,

@@ -1,12 +1,19 @@
-pub mod renderable;
+//! Renderable objects and graphics primitives
+//! 
+//! This module provides the core traits and implementations for objects
+//! that can be rendered to the screen.
+
 mod transforms;
 pub mod vertex;
 
-use renderable::Renderable;
-use transforms::Transform;
-use vertex::Vertex;
+pub use transforms::Transform;
+pub use vertex::{Vertex, VertexProvider};
 
-use crate::renderable::vertex::VertexProvider;
+/// Trait for objects that can be rendered and updated
+pub trait Renderable {
+    fn update(&mut self, delta: f32);
+    fn get_transform(&self) -> &Transform;
+}
 
 pub struct Triangle {
     vertices: [Vertex; 3],

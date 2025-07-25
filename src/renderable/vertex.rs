@@ -31,9 +31,6 @@ pub trait VertexProvider {
     fn vertex_count(&self) -> usize {
         self.vertices().len()
     }
-    fn desc() -> wgpu::VertexBufferLayout<'static> {
-        Vertex::desc()
-    }
 
     fn buffer_contents(&self) -> &[u8] {
         bytemuck::cast_slice(self.vertices())
