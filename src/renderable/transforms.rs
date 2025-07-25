@@ -30,6 +30,10 @@ pub struct Transform {
     pub rotation: Quat,
     /// Scale factors for each axis (x, y, z)
     pub scale: Vec3,
+    /// Cached transformation matrix (computed when dirty)
+    cached_matrix: Option<Mat4>,
+    /// Whether the cached matrix needs recomputation
+    matrix_dirty: bool,
 }
 
 impl Transform {
@@ -51,6 +55,8 @@ impl Transform {
             position,
             rotation: Quat::IDENTITY,
             scale: Vec3::ONE,
+            cached_matrix: None,
+            matrix_dirty: true,
         }
     }
 
@@ -58,12 +64,36 @@ impl Transform {
     ///
     /// This matrix can be used directly in vertex shaders for GPU-based
     /// transformation. The matrix combines scale, rotation, and translation
-    /// in the correct order.
+    /// in the correct order. Uses cached matrix if available and not dirty.
     ///
     /// # Returns
     ///
     /// A 4x4 matrix representing the complete transformation
-    pub fn to_matrix(&self) -> Mat4 {
+    pub fn to_matrix(&mut self) -> Mat4 {
+        if self.matrix_dirty || self.cached_matrix.is_none() {
+            self.cached_matrix = Some(Mat4::from_scale_rotation_translation(
+                self.scale,
+                self.rotation,
+                self.position,
+            ));
+            self.matrix_dirty = false;
+        }
+        self.cached_matrix.unwrap()
+    }
+
+    /// Gets the cached transformation matrix without recomputation.
+    /// If the matrix is dirty or not cached, computes it fresh.
+    ///
+    /// # Returns
+    ///
+    /// A 4x4 matrix representing the complete transformation
+    pub fn get_matrix(&self) -> Mat4 {
+        if let Some(matrix) = self.cached_matrix {
+            if !self.matrix_dirty {
+                return matrix;
+            }
+        }
+        // Fallback: compute matrix on demand (slower but maintains API)
         Mat4::from_scale_rotation_translation(self.scale, self.rotation, self.position)
     }
 
@@ -76,6 +106,7 @@ impl Transform {
     /// * `position` - New position in 3D space
     pub fn set_position(&mut self, position: Vec3) {
         self.position = position;
+        self.matrix_dirty = true;
     }
 
     /// Moves the transform by the given offset.
@@ -85,6 +116,7 @@ impl Transform {
     /// * `translation` - Offset to add to current position
     pub fn translate(&mut self, translation: Vec3) {
         self.position += translation;
+        self.matrix_dirty = true;
     }
 
     /// Moves the transform by the given offset using individual components.
@@ -96,6 +128,7 @@ impl Transform {
     /// * `z` - Offset along Z-axis
     pub fn translate_xyz(&mut self, x: f32, y: f32, z: f32) {
         self.position += Vec3::new(x, y, z);
+        self.matrix_dirty = true;
     }
 
     // === Scale Methods ===
@@ -107,6 +140,7 @@ impl Transform {
     /// * `scale` - New scale factors for each axis
     pub fn set_scale(&mut self, scale: Vec3) {
         self.scale = scale;
+        self.matrix_dirty = true;
     }
 
     /// Multiplies the current scale by the given factors.
@@ -116,6 +150,7 @@ impl Transform {
     /// * `scale` - Scale factors to multiply by
     pub fn scale(&mut self, scale: Vec3) {
         self.scale *= scale;
+        self.matrix_dirty = true;
     }
 
     /// Multiplies the current scale by the given factors using individual components.
@@ -127,6 +162,7 @@ impl Transform {
     /// * `sz` - Scale factor for Z-axis
     pub fn scale_xyz(&mut self, sx: f32, sy: f32, sz: f32) {
         self.scale *= Vec3::new(sx, sy, sz);
+        self.matrix_dirty = true;
     }
 
     // === Rotation Methods ===
@@ -143,6 +179,7 @@ impl Transform {
     /// [`set_rotation_euler_degrees`]: Transform::set_rotation_euler_degrees
     pub fn set_rotation(&mut self, rotation: Quat) {
         self.rotation = rotation;
+        self.matrix_dirty = true;
     }
 
     /// Sets rotation using Euler angles in radians.
@@ -156,6 +193,7 @@ impl Transform {
     /// * `rz` - Rotation around Z-axis in radians
     pub fn set_rotation_euler_radians(&mut self, rx: f32, ry: f32, rz: f32) {
         self.rotation = Quat::from_euler(glam::EulerRot::XYZ, rx, ry, rz);
+        self.matrix_dirty = true;
     }
 
     /// Sets rotation using Euler angles in degrees.
@@ -189,6 +227,7 @@ impl Transform {
     /// * `rotation` - The additional rotation as a quaternion
     pub fn rotate(&mut self, rotation: Quat) {
         self.rotation *= rotation;
+        self.matrix_dirty = true;
     }
 
     /// Applies additional rotation using Euler angles in radians.
@@ -203,6 +242,7 @@ impl Transform {
     /// * `rz` - Additional rotation around Z-axis in radians
     pub fn rotate_radians(&mut self, rx: f32, ry: f32, rz: f32) {
         self.rotation *= Quat::from_euler(glam::EulerRot::XYZ, rx, ry, rz);
+        self.matrix_dirty = true;
     }
 
     /// Applies additional rotation using Euler angles in degrees.
@@ -242,6 +282,8 @@ impl Default for Transform {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
             scale: Vec3::ONE,
+            cached_matrix: None,
+            matrix_dirty: true,
         }
     }
 }

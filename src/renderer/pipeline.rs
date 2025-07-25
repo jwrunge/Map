@@ -12,6 +12,7 @@ use crate::renderer::GpuContext;
 pub struct RenderPipeline {
     pub pipeline: wgpu::RenderPipeline,
     pub config: RenderConfig,
+    pub format: wgpu::TextureFormat,
     #[allow(dead_code)]
     pub multisampled_framebuffer: Option<wgpu::TextureView>,
 }
@@ -39,6 +40,7 @@ impl RenderPipeline {
         Self {
             pipeline,
             config,
+            format: gpu.config.format,
             multisampled_framebuffer,
         }
     }
@@ -78,6 +80,7 @@ impl RenderPipeline {
         Ok(Self {
             pipeline,
             config,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
             multisampled_framebuffer,
         })
     }
@@ -193,6 +196,7 @@ impl RenderPipeline {
         );
         self.pipeline = pipeline;
         self.config = config;
+        self.format = format;
         self.multisampled_framebuffer = multisampled_framebuffer;
     }
 
@@ -238,14 +242,13 @@ impl RenderPipeline {
         Self {
             pipeline,
             config,
+            format,
             multisampled_framebuffer,
         }
     }
 
     /// Get the current texture format used by this pipeline
     pub fn get_format(&self) -> wgpu::TextureFormat {
-        // For now, return the common format - in a full implementation,
-        // this would be stored as part of the pipeline state
-        wgpu::TextureFormat::Bgra8UnormSrgb
+        self.format
     }
 }

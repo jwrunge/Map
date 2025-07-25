@@ -107,6 +107,10 @@ impl Renderable for Quad {
     }
 
     fn get_matrix(&self) -> glam::Mat4 {
+        self.transform.get_matrix()
+    }
+
+    fn get_matrix_cached(&mut self) -> glam::Mat4 {
         self.transform.to_matrix()
     }
 
@@ -146,6 +150,10 @@ impl Renderable for Cube {
     }
 
     fn get_matrix(&self) -> glam::Mat4 {
+        self.transform.get_matrix()
+    }
+
+    fn get_matrix_cached(&mut self) -> glam::Mat4 {
         self.transform.to_matrix()
     }
 
@@ -182,6 +190,7 @@ pub trait Renderable {
     fn get_transform(&self) -> &Transform;
     fn get_transform_mut(&mut self) -> &mut Transform;
     fn get_matrix(&self) -> glam::Mat4;
+    fn get_matrix_cached(&mut self) -> glam::Mat4;
     fn get_culling_mode(&self) -> CullingMode;
 
     /// Mark object as clean after GPU update (called by renderer)
@@ -289,6 +298,10 @@ impl Renderable for Triangle {
     }
 
     fn get_matrix(&self) -> glam::Mat4 {
+        self.transform.get_matrix()
+    }
+
+    fn get_matrix_cached(&mut self) -> glam::Mat4 {
         self.transform.to_matrix()
     }
 
@@ -343,6 +356,11 @@ impl<T: Renderable> Renderable for &T {
     }
 
     fn get_matrix(&self) -> glam::Mat4 {
+        (**self).get_matrix()
+    }
+
+    fn get_matrix_cached(&mut self) -> glam::Mat4 {
+        // Cannot mutate through & reference - fall back to uncached
         (**self).get_matrix()
     }
 

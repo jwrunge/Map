@@ -86,8 +86,8 @@ impl State {
         // Get all objects from the scene
         let (triangles, quads, cubes) = self.scene.get_all_renderables();
 
-        // Log the object counts to show the architecture is working
-        log::info!(
+        // Log the object counts only at debug level to reduce console spam
+        log::debug!(
             "Rendering scene: {} triangles, {} quads, {} cubes",
             triangles.len(),
             quads.len(),

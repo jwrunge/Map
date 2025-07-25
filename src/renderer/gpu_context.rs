@@ -52,12 +52,34 @@ impl GpuContext {
             .unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
-        let surface_format = surface_caps
-            .formats
-            .iter()
-            .find(|f| f.is_srgb())
-            .copied()
-            .unwrap_or(surface_caps.formats[0]);
+        let surface_format = {
+            // On web platforms, prefer BGRA8Unorm for better compatibility
+            #[cfg(target_arch = "wasm32")]
+            {
+                surface_caps
+                    .formats
+                    .iter()
+                    .find(|f| **f == wgpu::TextureFormat::Bgra8Unorm)
+                    .copied()
+                    .unwrap_or_else(|| {
+                        surface_caps
+                            .formats
+                            .iter()
+                            .find(|f| f.is_srgb())
+                            .copied()
+                            .unwrap_or(surface_caps.formats[0])
+                    })
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                surface_caps
+                    .formats
+                    .iter()
+                    .find(|f| f.is_srgb())
+                    .copied()
+                    .unwrap_or(surface_caps.formats[0])
+            }
+        };
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,

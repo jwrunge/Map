@@ -234,16 +234,16 @@ impl RenderCore {
             let mut group_objects: Vec<&dyn VertexProvider> = Vec::new();
             
             // Add matrices and objects in the same order
-            for triangle in group_triangles {
-                all_matrices.push(camera.get_view_projection_matrix() * triangle.get_matrix());
+            for mut triangle in group_triangles {
+                all_matrices.push(camera.get_view_projection_matrix() * triangle.get_matrix_cached());
                 group_objects.push(*triangle);
             }
-            for quad in group_quads {
-                all_matrices.push(camera.get_view_projection_matrix() * quad.get_matrix());
+            for mut quad in group_quads {
+                all_matrices.push(camera.get_view_projection_matrix() * quad.get_matrix_cached());
                 group_objects.push(*quad);
             }
-            for cube in group_cubes {
-                all_matrices.push(camera.get_view_projection_matrix() * cube.get_matrix());
+            for mut cube in group_cubes {
+                all_matrices.push(camera.get_view_projection_matrix() * cube.get_matrix_cached());
                 group_objects.push(*cube);
             }
 
@@ -319,7 +319,7 @@ impl RenderCore {
             // Render pass is automatically dropped here
         }
 
-        log::info!("🎨 Rendered {} objects with culling mode {:?}", vertex_buffers.len(), culling_mode);
+        log::debug!("🎨 Rendered {} objects with culling mode {:?}", vertex_buffers.len(), culling_mode);
 
         Ok(())
     }
