@@ -2,14 +2,8 @@
 //!
 //! Handles view and projection matrices for 3D rendering
 
+use crate::state::ProjectionMode;
 use glam::{Mat4, Vec3};
-
-/// Projection mode for the camera
-#[derive(Clone, Copy, Debug)]
-pub enum ProjectionMode {
-    Orthographic,
-    Perspective,
-}
 
 /// Camera with projection and view matrix management
 pub struct Camera {
@@ -61,7 +55,7 @@ impl Camera {
     pub fn set_projection_mode(&mut self, mode: ProjectionMode) {
         self.projection_mode = mode;
         // Adjust camera position for different projection modes
-        match mode {
+        match self.projection_mode {
             ProjectionMode::Perspective => {
                 self.position = Vec3::new(0.0, 0.0, 3.0); // Move back for perspective
             }

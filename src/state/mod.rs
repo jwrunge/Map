@@ -4,6 +4,7 @@ use crate::renderable::Triangle;
 use crate::renderer::Renderer;
 use crate::scene::Scene;
 
+#[derive(Copy, Clone)]
 pub enum ProjectionMode {
     Orthographic,
     Perspective,
@@ -64,7 +65,7 @@ impl State {
             window,
             renderer,
             scene,
-            projection_mode: ProjectionMode::Orthographic,
+            projection_mode: ProjectionMode::Perspective,
         }
     }
 
@@ -78,13 +79,9 @@ impl State {
             ProjectionMode::Perspective => ProjectionMode::Orthographic,
         };
 
-        // Update the renderer's camera projection mode
-        let camera_mode = match self.projection_mode {
-            ProjectionMode::Orthographic => crate::renderer::camera::ProjectionMode::Orthographic,
-            ProjectionMode::Perspective => crate::renderer::camera::ProjectionMode::Perspective,
-        };
-
-        self.renderer.camera.set_projection_mode(camera_mode);
+        self.renderer
+            .camera
+            .set_projection_mode(self.projection_mode);
 
         match self.projection_mode {
             ProjectionMode::Orthographic => {
