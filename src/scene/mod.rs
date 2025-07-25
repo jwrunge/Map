@@ -56,6 +56,16 @@ impl Scene {
         log::debug!("Batch rendering {} triangles", triangles.len());
         render_fn(&triangles)
     }
+
+    /// Render all triangles with mutable access for dirty flag management
+    pub fn render_triangles_batch_mut<F>(&mut self, mut render_fn: F) -> Result<(), wgpu::SurfaceError>
+    where
+        F: FnMut(&mut [&mut Triangle]) -> Result<(), wgpu::SurfaceError>,
+    {
+        let mut triangles: Vec<&mut Triangle> = self.triangles.values_mut().collect();
+        log::debug!("Batch rendering {} triangles (mutable)", triangles.len());
+        render_fn(&mut triangles)
+    }
     
     /// Get the number of triangles in the scene
     pub fn triangle_count(&self) -> usize {

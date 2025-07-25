@@ -15,7 +15,7 @@ pub struct RenderPipeline {
 
 impl RenderPipeline {
     pub fn new(gpu: &GpuContext) -> Self {
-        // Create uniform buffer for transform matrices
+        // Create uniform buffer for transform matrices (legacy support)
         let uniform_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Transform Uniform Buffer"),
             size: std::mem::size_of::<[[f32; 4]; 4]>() as wgpu::BufferAddress,
@@ -23,7 +23,7 @@ impl RenderPipeline {
             mapped_at_creation: false,
         });
 
-        // Create bind group layout for uniforms
+        // Create bind group layout for uniforms with dynamic offset support
         let uniform_bind_group_layout =
             gpu.device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -33,8 +33,8 @@ impl RenderPipeline {
                         visibility: wgpu::ShaderStages::VERTEX,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
+                            has_dynamic_offset: true, // Enable dynamic offset support
+                            min_binding_size: Some(std::num::NonZeroU64::new(64).unwrap()), // 4x4 matrix size
                         },
                         count: None,
                     }],
@@ -119,7 +119,7 @@ impl RenderPipeline {
         renderable: &R,
     ) -> Result<(), wgpu::SurfaceError> {
         // Combine camera projection with object transform
-        let model_matrix = renderable.get_transform().to_matrix();
+        let model_matrix = renderable.get_matrix();
         let view_projection_matrix = camera.get_view_projection_matrix();
         let final_matrix = view_projection_matrix * model_matrix;
 

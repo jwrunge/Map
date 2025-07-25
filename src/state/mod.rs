@@ -1,6 +1,6 @@
 use winit::window::Window;
 
-use crate::renderable::Triangle;
+use crate::renderable::{Renderable, Triangle};
 use crate::renderer::Renderer;
 use crate::scene::Scene;
 
@@ -22,40 +22,21 @@ impl State {
         let renderer = Renderer::new(window.clone()).await;
         let mut scene = Scene::new();
 
-        // Log camera info for debugging
-        let size = window.inner_size();
-        let aspect_ratio = size.width as f32 / size.height as f32;
-        log::info!(
-            "Window size: {}x{}, aspect ratio: {}",
-            size.width,
-            size.height,
-            aspect_ratio
-        );
-        log::info!(
-            "Camera bounds: X=[-{}, {}], Y=[-1, 1]",
-            aspect_ratio,
-            aspect_ratio
-        );
-
         // Create some triangles to demonstrate the scene system with Z depth testing
         let mut triangle1 = Triangle::with_scale(0.3);
-        triangle1.transform.translate_xyz(-0.5, 0.0, -5.0); // Far back
+        triangle1.transform_translate(-0.5, 0.0, -5.0); // Far back
         let id1 = scene.add_triangle(triangle1);
         log::info!("Added triangle1 at (-0.5, 0, -5.0) with ID {}", id1);
 
         let mut triangle2 = Triangle::with_scale(0.3);
-        triangle2.transform.translate_xyz(0.5, 0.0, 0.0); // Center depth
-        triangle2
-            .transform
-            .rotate_radians(0.0, 0.0, std::f32::consts::PI / 6.0); // 30 degrees
+        triangle2.transform_translate(0.5, 0.0, 0.0); // Center depth
+        triangle2.transform_rotate_radians(0.0, 0.0, std::f32::consts::PI / 6.0); // 30 degrees
         let id2 = scene.add_triangle(triangle2);
         log::info!("Added triangle2 at (0.5, 0, 0.0) with ID {}", id2);
 
         let mut triangle3 = Triangle::with_scale(0.3);
-        triangle3.transform.translate_xyz(0.0, 0.4, 8.0); // Far forward
-        triangle3
-            .transform
-            .rotate_radians(0.0, 0.0, std::f32::consts::PI / 3.0); // 60 degrees
+        triangle3.transform_translate(0.0, 0.4, 8.0); // Far forward
+        triangle3.transform_rotate_radians(0.0, 0.0, std::f32::consts::PI / 3.0); // 60 degrees
         let id3 = scene.add_triangle(triangle3);
         log::info!("Added triangle3 at (0, 0.4, 8.0) with ID {}", id3);
 
@@ -82,15 +63,6 @@ impl State {
         self.renderer
             .camera
             .set_projection_mode(self.projection_mode);
-
-        match self.projection_mode {
-            ProjectionMode::Orthographic => {
-                log::info!("Switched to Orthographic projection - Z translation won't affect size");
-            }
-            ProjectionMode::Perspective => {
-                log::info!("Switched to Perspective projection - Z translation affects size");
-            }
-        }
     }
 
     pub fn update(&mut self) {
@@ -99,8 +71,9 @@ impl State {
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        // Render all triangles in the scene using batch rendering
-        self.scene
-            .render_triangles_batch(|triangles| self.renderer.render_batch(triangles))
+        // Render all triangles in the scene using dynamic batch rendering
+        self.scene.render_triangles_batch(|triangles| {
+            self.renderer.render_batch_dynamic(triangles)
+        })
     }
 }
