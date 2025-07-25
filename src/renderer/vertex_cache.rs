@@ -6,7 +6,7 @@
 use crate::renderable::VertexProvider;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::time::Instant;
+use web_time::Instant;
 use wgpu::util::DeviceExt;
 
 /// Hash key for identifying identical vertex data
@@ -57,7 +57,7 @@ impl VertexBufferCache {
         device: &wgpu::Device,
     ) -> Vec<(&wgpu::Buffer, u32)> {
         let mut result = Vec::new();
-        
+
         for renderable in renderables.iter() {
             let contents = renderable.buffer_contents();
             let hash = Self::hash_vertex_data(contents);
@@ -84,17 +84,17 @@ impl VertexBufferCache {
                 self.cache.insert(hash, cached_buffer);
             }
         }
-        
+
         // Now collect all the references (this works because we're not mutating anymore)
         for renderable in renderables.iter() {
             let contents = renderable.buffer_contents();
             let hash = Self::hash_vertex_data(contents);
-            
+
             if let Some(cached) = self.cache.get(&hash) {
                 result.push((&cached.buffer, cached.vertex_count));
             }
         }
-        
+
         result
     }
 

@@ -12,6 +12,7 @@ bytemuck = { version = "1.18", features = ["derive"] }
 cfg-if = "1.0"
 glam = "0.30.4"
 log = "0.4.27"
+web-time = "1.1.0"
 wgpu = "26.0.1"
 
 [dependencies.winit]
