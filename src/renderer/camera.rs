@@ -2,8 +2,16 @@
 //!
 //! Handles view and projection matrices for 3D rendering
 
-use crate::state::ProjectionMode;
 use glam::{Mat4, Vec3};
+
+/// Projection mode for the camera
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ProjectionMode {
+    /// Orthographic projection (no perspective)
+    Orthographic,
+    /// Perspective projection (3D perspective)
+    Perspective,
+}
 
 /// Camera with projection and view matrix management
 pub struct Camera {

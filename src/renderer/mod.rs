@@ -4,20 +4,32 @@
 //! GPU resource management from scene/entity management.
 
 pub mod camera;
+pub mod config;
 pub mod dynamic_uniforms;
+#[cfg(feature = "windowing")]
 pub mod gpu_context;
+#[cfg(feature = "headless")]
+pub mod headless;
 pub mod pipeline;
 pub mod vertex_cache;
 
+#[cfg(feature = "windowing")]
 use crate::renderable::{Renderable, VertexProvider, Triangle, Quad, Cube};
+#[cfg(feature = "windowing")]
 use winit::window::Window;
 
 pub use camera::Camera;
+pub use config::{AntialiasingMode, CullingMode, RenderConfig};
+#[cfg(feature = "headless")]
+pub use headless::HeadlessRenderer;
 pub use dynamic_uniforms::DynamicUniformBuffer;
+#[cfg(feature = "windowing")]
 pub use gpu_context::GpuContext;
 pub use pipeline::RenderPipeline;
 pub use vertex_cache::VertexBufferCache;
+
 /// High-level renderer that coordinates GPU resources and scene rendering
+#[cfg(feature = "windowing")]
 pub struct Renderer {
     pub gpu: GpuContext,
     pub pipeline: RenderPipeline,
@@ -26,6 +38,7 @@ pub struct Renderer {
     dynamic_uniforms: DynamicUniformBuffer,
 }
 
+#[cfg(feature = "windowing")]
 impl Renderer {
     pub async fn new(window: std::sync::Arc<Window>) -> Self {
         let gpu = GpuContext::new(window).await;
@@ -106,11 +119,19 @@ impl Renderer {
 
             // Single render pass for all objects
             if !vertex_buffers.is_empty() && !object_data.is_empty() {
+                let (color_attachment_view, resolve_target) = if self.pipeline.config.antialiasing.is_multisampled() {
+                    // Use multisampled framebuffer and resolve to surface
+                    (self.pipeline.multisampled_framebuffer.as_ref().unwrap(), Some(&view))
+                } else {
+                    // Render directly to surface
+                    (&view, None)
+                };
+
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Render Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
+                        view: color_attachment_view,
+                        resolve_target,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color {
                                 r: 0.1,
@@ -161,7 +182,7 @@ impl Renderer {
     }
 
     /// Render mixed object types (triangles, quads, cubes) in a single frame
-    /// This method works around Rust borrowing constraints by collecting data first
+    /// Objects are grouped by culling mode and rendered in separate passes to the same frame
     pub fn render_mixed_objects(
         &mut self,
         triangles: &[&Triangle],
@@ -173,9 +194,31 @@ impl Renderer {
             return Ok(());
         }
 
-        // Clear frame data
-        self.dynamic_uniforms.reset_frame();
+        // Group objects by culling mode for separate rendering passes
+        use std::collections::HashMap;
+        use crate::renderer::config::CullingMode;
+        
+        let mut culling_groups: HashMap<CullingMode, (Vec<&Triangle>, Vec<&Quad>, Vec<&Cube>)> = HashMap::new();
+        
+        // Group triangles by culling mode
+        for triangle in triangles {
+            let culling_mode = triangle.get_culling_mode();
+            culling_groups.entry(culling_mode).or_insert_with(|| (Vec::new(), Vec::new(), Vec::new())).0.push(*triangle);
+        }
+        
+        // Group quads by culling mode
+        for quad in quads {
+            let culling_mode = quad.get_culling_mode();
+            culling_groups.entry(culling_mode).or_insert_with(|| (Vec::new(), Vec::new(), Vec::new())).1.push(*quad);
+        }
+        
+        // Group cubes by culling mode
+        for cube in cubes {
+            let culling_mode = cube.get_culling_mode();
+            culling_groups.entry(culling_mode).or_insert_with(|| (Vec::new(), Vec::new(), Vec::new())).2.push(*cube);
+        }
 
+        // Create single frame output and encoder for all groups
         let output = self.gpu.surface.get_current_texture()?;
         let view = output
             .texture
@@ -185,126 +228,183 @@ impl Renderer {
             .gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Mixed Objects Render Encoder"),
+                label: Some("Mixed Objects Frame Encoder"),
             });
 
-        // Check if any objects are dirty
-        let mut has_updates = false;
-        for triangle in triangles {
-            if triangle.is_dirty() {
-                has_updates = true;
-                break;
-            }
-        }
-        if !has_updates {
-            for quad in quads {
-                if quad.is_dirty() {
-                    has_updates = true;
-                    break;
-                }
-            }
-        }
-        if !has_updates {
-            for cube in cubes {
-                if cube.is_dirty() {
-                    has_updates = true;
-                    break;
-                }
-            }
-        }
+        // Clear frame data ONCE for the entire frame
+        self.dynamic_uniforms.reset_frame();
 
-        if has_updates {
-            // Collect transform matrices from all objects in order
-            let mut all_matrices = Vec::new();
+        // Extract bind group layout BEFORE any mutations
+        let bind_group_layout = self.dynamic_uniforms.get_bind_group_layout().clone();
+
+        // Collect ALL objects and matrices across all culling groups FIRST
+        let mut all_objects_by_group: Vec<(CullingMode, Vec<&dyn VertexProvider>)> = Vec::new();
+        let mut all_matrices: Vec<glam::Mat4> = Vec::new();
+
+        for (culling_mode, (group_triangles, group_quads, group_cubes)) in &culling_groups {
+            if group_triangles.is_empty() && group_quads.is_empty() && group_cubes.is_empty() {
+                continue;
+            }
+
+            let mut group_objects: Vec<&dyn VertexProvider> = Vec::new();
             
-            // Add triangle matrices first
-            for triangle in triangles {
+            // Add matrices and objects in the same order
+            for triangle in group_triangles {
                 all_matrices.push(self.camera.get_view_projection_matrix() * triangle.get_matrix());
+                group_objects.push(*triangle);
             }
-            // Add quad matrices second
-            for quad in quads {
+            for quad in group_quads {
                 all_matrices.push(self.camera.get_view_projection_matrix() * quad.get_matrix());
+                group_objects.push(*quad);
             }
-            // Add cube matrices third
-            for cube in cubes {
+            for cube in group_cubes {
                 all_matrices.push(self.camera.get_view_projection_matrix() * cube.get_matrix());
+                group_objects.push(*cube);
             }
 
-            // Upload all matrices to dynamic uniform buffer
-            let object_data = self
-                .dynamic_uniforms
-                .upload_matrices(&self.gpu.queue, &all_matrices);
+            all_objects_by_group.push((*culling_mode, group_objects));
+        }
 
-            // Collect all objects as trait objects for unified vertex buffer processing
-            let mut all_objects: Vec<&dyn VertexProvider> = Vec::new();
-            
-            // Add objects in the same order as matrices
-            for triangle in triangles {
-                all_objects.push(*triangle);
-            }
-            for quad in quads {
-                all_objects.push(*quad);
-            }
-            for cube in cubes {
-                all_objects.push(*cube);
-            }
+        // Create all vertex buffers and upload all uniforms FIRST
+        let all_objects: Vec<&dyn VertexProvider> = all_objects_by_group.iter()
+            .flat_map(|(_, objects)| objects.iter().cloned())
+            .collect();
+        
+        let all_vertex_buffers = if !all_objects.is_empty() {
+            self.vertex_cache.get_or_create_mixed_buffers(&all_objects, &self.gpu.device)
+        } else {
+            Vec::new()
+        };
 
-            // Create vertex buffers for all objects in one call
-            let all_vertex_buffers = self.vertex_cache.get_or_create_mixed_buffers(&all_objects, &self.gpu.device);
+        let object_data = if !all_matrices.is_empty() {
+            self.dynamic_uniforms.upload_matrices(&self.gpu.queue, &all_matrices)
+        } else {
+            Vec::new()
+        };
 
-            // Single render pass for all objects
-            if !all_vertex_buffers.is_empty() && !object_data.is_empty() {
-                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Mixed Objects Render Pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: 0.1,
-                                g: 0.2,
-                                b: 0.3,
-                                a: 1.0,
-                            }),
-                            store: wgpu::StoreOp::Store,
-                        },
-                        depth_slice: None,
-                    })],
-                    depth_stencil_attachment: None,
-                    occlusion_query_set: None,
-                    timestamp_writes: None,
-                });
+        // Extract EVERYTHING needed for rendering before creating pipelines
+        let gpu_device = &self.gpu.device;
+        let gpu_format = self.gpu.config.format;
+        let pipeline_config = self.pipeline.config.clone();
+        let default_pipeline = &self.pipeline.pipeline;
+        let multisampled_framebuffer = self.pipeline.multisampled_framebuffer.as_ref();
 
-                render_pass.set_pipeline(&self.pipeline.pipeline);
-
-                // Render each object with its dynamic offset
-                for (index, vertex_buffer) in all_vertex_buffers.iter().enumerate() {
-                    if index < object_data.len() {
-                        let (bind_group, dynamic_offset) = &object_data[index];
-
-                        // Set vertex buffer
-                        render_pass.set_vertex_buffer(0, vertex_buffer.0.slice(..));
-
-                        // Set uniform bind group with dynamic offset
-                        render_pass.set_bind_group(0, *bind_group, &[*dynamic_offset]);
-
-                        // Draw
-                        let vertex_count = vertex_buffer.1;
-                        render_pass.draw(0..vertex_count, 0..1);
-                    }
-                }
-                
-                // Log rendering info
-                log::info!("🎨 Rendered {} triangles, {} quads, {} cubes in single pass", 
-                          triangles.len(), quads.len(), cubes.len());
+        // Create pipelines for all culling modes BEFORE rendering
+        let mut pipelines: HashMap<CullingMode, wgpu::RenderPipeline> = HashMap::new();
+        for (culling_mode, _) in &all_objects_by_group {
+            if *culling_mode != pipeline_config.culling {
+                let pipeline = RenderPipeline::create_culling_pipeline(
+                    gpu_device,
+                    &bind_group_layout,
+                    gpu_format,
+                    &pipeline_config,
+                    *culling_mode,
+                );
+                pipelines.insert(*culling_mode, pipeline);
             }
         }
 
+        // Now render each culling group using all pre-computed data
+        let mut first_group = true;
+        let mut object_index = 0;
+        for (culling_mode, group_objects) in all_objects_by_group {
+            let group_size = group_objects.len();
+            if group_size > 0 {
+                // Select the appropriate pipeline
+                let pipeline = if let Some(temp_pipeline) = pipelines.get(&culling_mode) {
+                    temp_pipeline
+                } else {
+                    default_pipeline
+                };
+
+                // Render this group using pre-computed data
+                Self::render_culling_group_static(
+                    &mut encoder,
+                    &view,
+                    pipeline,
+                    multisampled_framebuffer,
+                    &all_vertex_buffers[object_index..object_index + group_size],
+                    &object_data[object_index..object_index + group_size],
+                    first_group,
+                    culling_mode,
+                    &pipeline_config,
+                )?;
+                first_group = false;
+                object_index += group_size;
+            }
+        }
+
+        // Submit all rendering and present once
         self.gpu.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
         // Periodic cache cleanup
         self.vertex_cache.cleanup_old_entries();
+
+        Ok(())
+    }
+
+    /// Static rendering method that doesn't require borrowing self
+    fn render_culling_group_static(
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+        pipeline: &wgpu::RenderPipeline,
+        multisampled_framebuffer: Option<&wgpu::TextureView>,
+        vertex_buffers: &[(&wgpu::Buffer, u32)],
+        uniform_data: &[(&wgpu::BindGroup, u32)],
+        should_clear: bool,
+        culling_mode: CullingMode,
+        config: &RenderConfig,
+    ) -> Result<(), wgpu::SurfaceError> {
+        if vertex_buffers.is_empty() || uniform_data.is_empty() {
+            return Ok(());
+        }
+
+        let (color_attachment_view, resolve_target) = if config.antialiasing.is_multisampled() {
+            (multisampled_framebuffer.unwrap(), Some(view))
+        } else {
+            (view, None)
+        };
+
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Culling Group Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: color_attachment_view,
+                resolve_target,
+                ops: wgpu::Operations {
+                    load: if should_clear {
+                        wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.1,
+                            g: 0.2,
+                            b: 0.3,
+                            a: 1.0,
+                        })
+                    } else {
+                        wgpu::LoadOp::Load
+                    },
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
+
+        render_pass.set_pipeline(pipeline);
+
+        // Render each object
+        for (index, vertex_buffer) in vertex_buffers.iter().enumerate() {
+            if index < uniform_data.len() {
+                let (bind_group, dynamic_offset) = &uniform_data[index];
+
+                render_pass.set_vertex_buffer(0, vertex_buffer.0.slice(..));
+                render_pass.set_bind_group(0, *bind_group, &[*dynamic_offset]);
+                render_pass.draw(0..vertex_buffer.1, 0..1);
+            }
+        }
+
+        log::info!("🎨 Rendered {} objects with culling mode {:?}", vertex_buffers.len(), culling_mode);
 
         Ok(())
     }
@@ -317,5 +417,58 @@ impl Renderer {
     /// Clear vertex buffer cache (useful for memory management)
     pub fn clear_cache(&mut self) {
         self.vertex_cache = VertexBufferCache::new();
+    }
+
+    /// Update the rendering configuration (antialiasing, culling, etc.)
+    pub fn update_config(&mut self, config: RenderConfig) {
+        self.pipeline.update_config(
+            &self.gpu.device,
+            self.dynamic_uniforms.get_bind_group_layout(),
+            self.gpu.config.format,
+            config,
+            self.gpu.config.width,
+            self.gpu.config.height,
+        );
+    }
+
+    /// Get the current rendering configuration
+    pub fn get_config(&self) -> &RenderConfig {
+        &self.pipeline.config
+    }
+
+    /// Set antialiasing mode specifically
+    pub fn set_antialiasing(&mut self, mode: AntialiasingMode) {
+        let mut config = self.pipeline.config.clone();
+        config.antialiasing = mode;
+        self.update_config(config);
+    }
+
+    /// Set culling mode specifically
+    pub fn set_culling(&mut self, mode: CullingMode) {
+        let mut config = self.pipeline.config.clone();
+        config.culling = mode;
+        self.update_config(config);
+    }
+
+    /// Enable/disable alpha blending
+    pub fn set_alpha_blending(&mut self, enabled: bool) {
+        let mut config = self.pipeline.config.clone();
+        config.alpha_blending = enabled;
+        self.update_config(config);
+    }
+
+    /// Switch to 2D optimized settings (no backface culling, alpha blending)
+    pub fn set_2d_mode(&mut self) {
+        self.update_config(RenderConfig::for_2d());
+    }
+
+    /// Switch to 3D optimized settings (backface culling, no alpha blending)
+    pub fn set_3d_mode(&mut self) {
+        self.update_config(RenderConfig::for_3d());
+    }
+
+    /// Switch to performance mode (no antialiasing)
+    pub fn set_performance_mode(&mut self) {
+        self.update_config(RenderConfig::performance());
     }
 }

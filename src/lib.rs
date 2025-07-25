@@ -1,14 +1,24 @@
-mod app;
 mod renderable;
 mod renderer;
 mod scene;
+
+#[cfg(feature = "windowing")]
+mod app;
+#[cfg(feature = "windowing")]
 mod state;
 
+#[cfg(feature = "windowing")]
 use winit::event_loop::EventLoop;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
+// Public API exports
+pub use renderable::*;
+pub use renderer::*;
+pub use scene::*;
+
+#[cfg(feature = "windowing")]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub fn run() {
     cfg_if::cfg_if! {
@@ -39,5 +49,7 @@ pub fn run() {
     }
 }
 
+#[cfg(feature = "windowing")]
 pub use app::App;
+#[cfg(feature = "windowing")]
 pub use state::State;

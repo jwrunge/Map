@@ -4,6 +4,7 @@
 //! that can be rendered to the screen.
 
 use glam;
+use crate::renderer::config::CullingMode;
 
 pub mod mesh;
 mod transforms;
@@ -19,6 +20,7 @@ pub struct Quad {
     mesh: QuadMesh,
     transform: Transform,
     is_dirty: bool,
+    culling_mode: CullingMode,
 }
 
 impl Quad {
@@ -28,7 +30,28 @@ impl Quad {
             mesh: QuadMesh::new(width, height),
             transform: Transform::new(),
             is_dirty: true,
+            culling_mode: CullingMode::None, // 2D objects default to no culling
         }
+    }
+
+    /// Get access to the mesh for rendering
+    pub fn mesh(&self) -> &QuadMesh {
+        &self.mesh
+    }
+
+    /// Get access to the transform
+    pub fn transform(&self) -> &Transform {
+        &self.transform
+    }
+
+    /// Get the current culling mode
+    pub fn get_culling_mode(&self) -> CullingMode {
+        self.culling_mode
+    }
+
+    /// Set the culling mode
+    pub fn set_culling_mode(&mut self, mode: CullingMode) {
+        self.culling_mode = mode;
     }
 }
 
@@ -38,6 +61,7 @@ pub struct Cube {
     mesh: CubeMesh,
     transform: Transform,
     is_dirty: bool,
+    culling_mode: CullingMode,
 }
 
 impl Cube {
@@ -47,7 +71,28 @@ impl Cube {
             mesh: CubeMesh::new(size),
             transform: Transform::new(),
             is_dirty: true,
+            culling_mode: CullingMode::BackfaceCulling, // 3D objects benefit from backface culling
         }
+    }
+
+    /// Get access to the mesh for rendering
+    pub fn mesh(&self) -> &CubeMesh {
+        &self.mesh
+    }
+
+    /// Get access to the transform
+    pub fn transform(&self) -> &Transform {
+        &self.transform
+    }
+
+    /// Get the current culling mode
+    pub fn get_culling_mode(&self) -> CullingMode {
+        self.culling_mode
+    }
+
+    /// Set the culling mode
+    pub fn set_culling_mode(&mut self, mode: CullingMode) {
+        self.culling_mode = mode;
     }
 }
 
@@ -76,6 +121,10 @@ impl Renderable for Quad {
     fn update(&mut self, delta: f32) {
         // Quad rotates around Y axis for variety
         self.transform_rotate_degrees(0.0, 20.0 * delta, 0.0);
+    }
+
+    fn get_culling_mode(&self) -> CullingMode {
+        self.culling_mode
     }
 }
 
@@ -112,6 +161,10 @@ impl Renderable for Cube {
         // Cube rotates around X and Y axes for visual appeal
         self.transform_rotate_degrees(30.0 * delta, 45.0 * delta, 0.0);
     }
+
+    fn get_culling_mode(&self) -> CullingMode {
+        self.culling_mode
+    }
 }
 
 // Implement VertexProvider for Cube
@@ -129,6 +182,7 @@ pub trait Renderable {
     fn get_transform(&self) -> &Transform;
     fn get_transform_mut(&mut self) -> &mut Transform;
     fn get_matrix(&self) -> glam::Mat4;
+    fn get_culling_mode(&self) -> CullingMode;
 
     /// Mark object as clean after GPU update (called by renderer)
     fn mark_clean(&mut self) {
@@ -162,10 +216,12 @@ pub trait Renderable {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Triangle {
     is_dirty: bool,
     vertices: [Vertex; 3],
     transform: Transform,
+    culling_mode: CullingMode,
 }
 
 impl Triangle {
@@ -198,7 +254,28 @@ impl Triangle {
                 },
             ],
             transform: Transform::new(),
+            culling_mode: CullingMode::None, // 2D triangles should render both sides
         }
+    }
+
+    /// Get access to the vertices for rendering
+    pub fn vertices(&self) -> &[Vertex; 3] {
+        &self.vertices
+    }
+
+    /// Get access to the transform
+    pub fn transform(&self) -> &Transform {
+        &self.transform
+    }
+
+    /// Get the current culling mode
+    pub fn get_culling_mode(&self) -> CullingMode {
+        self.culling_mode
+    }
+
+    /// Set the culling mode
+    pub fn set_culling_mode(&mut self, mode: CullingMode) {
+        self.culling_mode = mode;
     }
 }
 
@@ -228,6 +305,10 @@ impl Renderable for Triangle {
         self.transform_rotate_degrees(0.0, 0.0, 15.0 * delta);
         // Note: transform_rotate_degrees automatically sets dirty flag
         // The dirty flag will be cleared by the renderer after GPU update
+    }
+
+    fn get_culling_mode(&self) -> CullingMode {
+        self.culling_mode
     }
 }
 
@@ -263,6 +344,10 @@ impl<T: Renderable> Renderable for &T {
 
     fn get_matrix(&self) -> glam::Mat4 {
         (**self).get_matrix()
+    }
+
+    fn get_culling_mode(&self) -> CullingMode {
+        (**self).get_culling_mode()
     }
 }
 

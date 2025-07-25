@@ -1,14 +1,8 @@
 use web_time::Instant;
 use winit::window::Window;
 
-use crate::renderer::Renderer;
+use crate::renderer::{Renderer, camera::ProjectionMode};
 use crate::scene::Scene;
-
-#[derive(Copy, Clone)]
-pub enum ProjectionMode {
-    Orthographic,
-    Perspective,
-}
 
 pub struct State {
     pub window: std::sync::Arc<Window>,

@@ -200,7 +200,7 @@ impl CubeMesh {
             color: [0.0, 0.0, 0.0],
         }; 36];
 
-        let mut vertex_index = 0;
+        let mut _vertex_index = 0;
 
         // Define cube vertices systematically
         // Using standard cube vertex positions
