@@ -34,46 +34,6 @@ impl VertexBufferCache {
         }
     }
 
-    /// Get or create a cached vertex buffer for the given geometry
-    pub fn get_or_create_buffer<T: VertexProvider>(
-        &mut self,
-        renderable: &T,
-        device: &wgpu::Device,
-    ) -> (&wgpu::Buffer, u32) {
-        let contents = renderable.buffer_contents();
-        let hash = Self::hash_vertex_data(contents);
-
-        // First, check if we already have this buffer cached
-        if self.cache.contains_key(&hash) {
-            // Update the last used time
-            if let Some(cached) = self.cache.get_mut(&hash) {
-                cached.last_used = Instant::now();
-            }
-            // Now get the immutable reference
-            let cached = self.cache.get(&hash).unwrap();
-            return (&cached.buffer, cached.vertex_count);
-        }
-
-        // If we get here, we need to create a new buffer
-        let vertex_count = renderable.vertex_count() as u32;
-        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Cached Vertex Buffer"),
-            contents,
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        let cached_buffer = CachedVertexBuffer {
-            buffer,
-            vertex_count,
-            last_used: Instant::now(),
-        };
-
-        // Insert the new buffer and return reference to it
-        self.cache.insert(hash, cached_buffer);
-        let cached = self.cache.get(&hash).unwrap();
-        (&cached.buffer, cached.vertex_count)
-    }
-
     /// Clean up old cache entries to prevent memory leaks
     pub fn cleanup_old_entries(&mut self) {
         let now = Instant::now();

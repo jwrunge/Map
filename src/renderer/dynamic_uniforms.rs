@@ -3,7 +3,6 @@
 //! This module provides multiple uniform buffer slots to avoid overwriting
 //! uniform data when rendering multiple objects in a single render pass.
 
-use wgpu::util::DeviceExt;
 use std::mem;
 
 /// Maximum number of objects that can be rendered in a single batch
@@ -81,35 +80,8 @@ impl DynamicUniformBuffer {
         self.current_slot = 0;
     }
 
-    /// Upload matrix data to next available slot and return bind group + offset
-    pub fn upload_matrix(
-        &mut self,
-        queue: &wgpu::Queue,
-        matrix: &glam::Mat4,
-    ) -> Option<(&wgpu::BindGroup, u32)> {
-        if self.current_slot >= MAX_OBJECTS_PER_BATCH {
-            log::warn!("Dynamic uniform buffer full! Cannot render more than {} objects per batch", MAX_OBJECTS_PER_BATCH);
-            return None;
-        }
-
-        let offset = self.current_slot as u64 * self.uniform_size;
-        
-        // Upload matrix data to the correct slot
-        queue.write_buffer(
-            &self.buffer,
-            offset,
-            bytemuck::cast_slice(matrix.as_ref()),
-        );
-
-        let bind_group = &self.bind_groups[0]; // Use first bind group with dynamic offset
-        let dynamic_offset = offset as u32;
-        
-        self.current_slot += 1;
-        Some((bind_group, dynamic_offset))
-    }
-
     /// Get the bind group layout for pipeline creation
-    pub fn bind_group_layout(&self) -> &wgpu::BindGroupLayout {
+    pub fn get_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
         &self.bind_group_layout
     }
 
