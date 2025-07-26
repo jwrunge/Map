@@ -4,6 +4,7 @@
 //! that can be rendered to the screen.
 
 use glam;
+use web_time::Instant;
 use crate::renderer::config::CullingMode;
 
 pub mod mesh;
@@ -189,6 +190,7 @@ pub struct Circle {
     transform: Transform,
     is_dirty: bool,
     culling_mode: CullingMode,
+    start_time: Instant,
 }
 
 impl Circle {
@@ -199,6 +201,7 @@ impl Circle {
             transform: Transform::new(),
             is_dirty: true,
             culling_mode: CullingMode::None, // 2D objects default to no culling
+            start_time: Instant::now(),
         }
     }
 
@@ -250,11 +253,8 @@ impl Renderable for Circle {
 
     fn update(&mut self, delta: f32) {
         // Circle gently pulses with scale and rotates
-        let time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs_f32();
-        let pulse = 1.0 + 0.1 * (time * 2.0).sin();
+        let elapsed_time = self.start_time.elapsed().as_secs_f32();
+        let pulse = 1.0 + 0.1 * (elapsed_time * 2.0).sin();
         
         // Set absolute scale instead of accumulating
         self.transform.set_scale(glam::Vec3::new(pulse, pulse, 1.0));
