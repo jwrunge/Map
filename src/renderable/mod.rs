@@ -10,7 +10,7 @@ pub mod mesh;
 mod transforms;
 pub mod vertex;
 
-pub use mesh::{CubeMesh, Mesh, QuadMesh, TriangleMesh};
+pub use mesh::{CubeMesh, Mesh, QuadMesh, TriangleMesh, CircleMesh, CylinderMesh, ConeMesh, SphereMesh};
 pub use transforms::Transform;
 pub use vertex::{Vertex, VertexProvider};
 
@@ -177,6 +177,343 @@ impl Renderable for Cube {
 
 // Implement VertexProvider for Cube
 impl VertexProvider for Cube {
+    fn vertices(&self) -> &[Vertex] {
+        self.mesh.vertices()
+    }
+}
+
+/// Circle object (2D circle made of triangular segments)
+#[derive(Debug, Clone)]
+pub struct Circle {
+    mesh: CircleMesh,
+    transform: Transform,
+    is_dirty: bool,
+    culling_mode: CullingMode,
+}
+
+impl Circle {
+    /// Create a new circle with the given radius and number of segments
+    pub fn new(radius: f32, segments: u32) -> Self {
+        Self {
+            mesh: CircleMesh::new(radius, segments),
+            transform: Transform::new(),
+            is_dirty: true,
+            culling_mode: CullingMode::None, // 2D objects default to no culling
+        }
+    }
+
+    /// Get access to the mesh for rendering
+    pub fn mesh(&self) -> &CircleMesh {
+        &self.mesh
+    }
+
+    /// Get access to the transform
+    pub fn transform(&self) -> &Transform {
+        &self.transform
+    }
+
+    /// Get the current culling mode
+    pub fn get_culling_mode(&self) -> CullingMode {
+        self.culling_mode
+    }
+
+    /// Set the culling mode
+    pub fn set_culling_mode(&mut self, mode: CullingMode) {
+        self.culling_mode = mode;
+    }
+}
+
+impl Renderable for Circle {
+    fn get_transform_mut(&mut self) -> &mut Transform {
+        &mut self.transform
+    }
+
+    fn get_transform(&self) -> &Transform {
+        &self.transform
+    }
+
+    fn get_matrix(&self) -> glam::Mat4 {
+        self.transform.get_matrix()
+    }
+
+    fn get_matrix_cached(&mut self) -> glam::Mat4 {
+        self.transform.to_matrix()
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.is_dirty
+    }
+
+    fn set_dirty(&mut self, dirty: bool) {
+        self.is_dirty = dirty;
+    }
+
+    fn update(&mut self, delta: f32) {
+        // Circle gently pulses with scale and rotates
+        let time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs_f32();
+        let pulse = 1.0 + 0.1 * (time * 2.0).sin();
+        
+        // Set absolute scale instead of accumulating
+        self.transform.set_scale(glam::Vec3::new(pulse, pulse, 1.0));
+        self.transform_rotate_degrees(0.0, 0.0, 30.0 * delta);
+        self.set_dirty(true);
+    }
+
+    fn get_culling_mode(&self) -> CullingMode {
+        self.culling_mode
+    }
+}
+
+impl VertexProvider for Circle {
+    fn vertices(&self) -> &[Vertex] {
+        self.mesh.vertices()
+    }
+}
+
+/// Cylinder object (3D cylinder with circular cross-section)
+#[derive(Debug, Clone)]
+pub struct Cylinder {
+    mesh: CylinderMesh,
+    transform: Transform,
+    is_dirty: bool,
+    culling_mode: CullingMode,
+}
+
+impl Cylinder {
+    /// Create a new cylinder with the given radius, height, and number of segments
+    pub fn new(radius: f32, height: f32, segments: u32) -> Self {
+        Self {
+            mesh: CylinderMesh::new(radius, height, segments),
+            transform: Transform::new(),
+            is_dirty: true,
+            culling_mode: CullingMode::BackfaceCulling, // 3D objects benefit from backface culling
+        }
+    }
+
+    /// Get access to the mesh for rendering
+    pub fn mesh(&self) -> &CylinderMesh {
+        &self.mesh
+    }
+
+    /// Get access to the transform
+    pub fn transform(&self) -> &Transform {
+        &self.transform
+    }
+
+    /// Get the current culling mode
+    pub fn get_culling_mode(&self) -> CullingMode {
+        self.culling_mode
+    }
+
+    /// Set the culling mode
+    pub fn set_culling_mode(&mut self, mode: CullingMode) {
+        self.culling_mode = mode;
+    }
+}
+
+impl Renderable for Cylinder {
+    fn get_transform_mut(&mut self) -> &mut Transform {
+        &mut self.transform
+    }
+
+    fn get_transform(&self) -> &Transform {
+        &self.transform
+    }
+
+    fn get_matrix(&self) -> glam::Mat4 {
+        self.transform.get_matrix()
+    }
+
+    fn get_matrix_cached(&mut self) -> glam::Mat4 {
+        self.transform.to_matrix()
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.is_dirty
+    }
+
+    fn set_dirty(&mut self, dirty: bool) {
+        self.is_dirty = dirty;
+    }
+
+    fn update(&mut self, delta: f32) {
+        // Cylinder rotates around Y axis like a rolling log
+        self.transform_rotate_degrees(45.0 * delta, 45.0 * delta, 0.0);
+    }
+
+    fn get_culling_mode(&self) -> CullingMode {
+        self.culling_mode
+    }
+}
+
+impl VertexProvider for Cylinder {
+    fn vertices(&self) -> &[Vertex] {
+        self.mesh.vertices()
+    }
+}
+
+/// Cone object (3D cone with circular base)
+#[derive(Debug, Clone)]
+pub struct Cone {
+    mesh: ConeMesh,
+    transform: Transform,
+    is_dirty: bool,
+    culling_mode: CullingMode,
+}
+
+impl Cone {
+    /// Create a new cone with the given radius, height, and number of segments
+    pub fn new(radius: f32, height: f32, segments: u32) -> Self {
+        Self {
+            mesh: ConeMesh::new(radius, height, segments),
+            transform: Transform::new(),
+            is_dirty: true,
+            culling_mode: CullingMode::BackfaceCulling, // 3D objects benefit from backface culling
+        }
+    }
+
+    /// Get access to the mesh for rendering
+    pub fn mesh(&self) -> &ConeMesh {
+        &self.mesh
+    }
+
+    /// Get access to the transform
+    pub fn transform(&self) -> &Transform {
+        &self.transform
+    }
+
+    /// Get the current culling mode
+    pub fn get_culling_mode(&self) -> CullingMode {
+        self.culling_mode
+    }
+
+    /// Set the culling mode
+    pub fn set_culling_mode(&mut self, mode: CullingMode) {
+        self.culling_mode = mode;
+    }
+}
+
+impl Renderable for Cone {
+    fn get_transform_mut(&mut self) -> &mut Transform {
+        &mut self.transform
+    }
+
+    fn get_transform(&self) -> &Transform {
+        &self.transform
+    }
+
+    fn get_matrix(&self) -> glam::Mat4 {
+        self.transform.get_matrix()
+    }
+
+    fn get_matrix_cached(&mut self) -> glam::Mat4 {
+        self.transform.to_matrix()
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.is_dirty
+    }
+
+    fn set_dirty(&mut self, dirty: bool) {
+        self.is_dirty = dirty;
+    }
+
+    fn update(&mut self, delta: f32) {
+        // Cone wobbles by rotating around X and Y axes
+        self.transform_rotate_degrees(20.0 * delta, 15.0 * delta, 0.0);
+    }
+
+    fn get_culling_mode(&self) -> CullingMode {
+        self.culling_mode
+    }
+}
+
+impl VertexProvider for Cone {
+    fn vertices(&self) -> &[Vertex] {
+        self.mesh.vertices()
+    }
+}
+
+/// Sphere object (3D sphere using UV sphere generation)
+#[derive(Debug, Clone)]
+pub struct Sphere {
+    mesh: SphereMesh,
+    transform: Transform,
+    is_dirty: bool,
+    culling_mode: CullingMode,
+}
+
+impl Sphere {
+    /// Create a new sphere with the given radius and subdivision counts
+    pub fn new(radius: f32, latitude_segments: u32, longitude_segments: u32) -> Self {
+        Self {
+            mesh: SphereMesh::new(radius, latitude_segments, longitude_segments),
+            transform: Transform::new(),
+            is_dirty: true,
+            culling_mode: CullingMode::BackfaceCulling, // 3D objects benefit from backface culling
+        }
+    }
+
+    /// Get access to the mesh for rendering
+    pub fn mesh(&self) -> &SphereMesh {
+        &self.mesh
+    }
+
+    /// Get access to the transform
+    pub fn transform(&self) -> &Transform {
+        &self.transform
+    }
+
+    /// Get the current culling mode
+    pub fn get_culling_mode(&self) -> CullingMode {
+        self.culling_mode
+    }
+
+    /// Set the culling mode
+    pub fn set_culling_mode(&mut self, mode: CullingMode) {
+        self.culling_mode = mode;
+    }
+}
+
+impl Renderable for Sphere {
+    fn get_transform_mut(&mut self) -> &mut Transform {
+        &mut self.transform
+    }
+
+    fn get_transform(&self) -> &Transform {
+        &self.transform
+    }
+
+    fn get_matrix(&self) -> glam::Mat4 {
+        self.transform.get_matrix()
+    }
+
+    fn get_matrix_cached(&mut self) -> glam::Mat4 {
+        self.transform.to_matrix()
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.is_dirty
+    }
+
+    fn set_dirty(&mut self, dirty: bool) {
+        self.is_dirty = dirty;
+    }
+
+    fn update(&mut self, delta: f32) {
+        // Sphere rotates smoothly on multiple axes for a nice orbital effect
+        self.transform_rotate_degrees(10.0 * delta, 25.0 * delta, 5.0 * delta);
+    }
+
+    fn get_culling_mode(&self) -> CullingMode {
+        self.culling_mode
+    }
+}
+
+impl VertexProvider for Sphere {
     fn vertices(&self) -> &[Vertex] {
         self.mesh.vertices()
     }
@@ -405,14 +742,52 @@ mod tests {
     }
 
     #[test]
+    fn test_circle_creation() {
+        let circle = Circle::new(1.0, 8);
+        assert_eq!(circle.vertices().len(), 24); // 8 triangles (3 vertices each)
+    }
+
+    #[test]
+    fn test_cylinder_creation() {
+        let cylinder = Cylinder::new(1.0, 2.0, 6);
+        // 6 side quads (12 triangles) + 2 caps (6 triangles each) = 24 triangles = 72 vertices
+        assert_eq!(cylinder.vertices().len(), 72);
+    }
+
+    #[test]
+    fn test_cone_creation() {
+        let cone = Cone::new(1.0, 2.0, 6);
+        // 6 side triangles + 6 base triangles = 12 triangles = 36 vertices
+        assert_eq!(cone.vertices().len(), 36);
+    }
+
+    #[test]
+    fn test_sphere_creation() {
+        let sphere = Sphere::new(1.0, 4, 8);
+        // 4 latitude segments * 8 longitude segments * 2 triangles per quad = 64 triangles = 192 vertices
+        assert_eq!(sphere.vertices().len(), 192);
+    }
+
+    #[test]
     fn test_culling_modes() {
         let triangle = Triangle::new();
         let quad = Quad::with_size(1.0, 1.0);
         let cube = Cube::with_size(1.0);
+        let circle = Circle::new(1.0, 8);
+        let cylinder = Cylinder::new(1.0, 2.0, 8);
+        let cone = Cone::new(1.0, 2.0, 8);
+        let sphere = Sphere::new(1.0, 8, 16);
         
+        // 2D objects should have no culling
         assert_eq!(triangle.get_culling_mode(), CullingMode::None);
         assert_eq!(quad.get_culling_mode(), CullingMode::None);
+        assert_eq!(circle.get_culling_mode(), CullingMode::None);
+        
+        // 3D objects should have backface culling
         assert_eq!(cube.get_culling_mode(), CullingMode::BackfaceCulling);
+        assert_eq!(cylinder.get_culling_mode(), CullingMode::BackfaceCulling);
+        assert_eq!(cone.get_culling_mode(), CullingMode::BackfaceCulling);
+        assert_eq!(sphere.get_culling_mode(), CullingMode::BackfaceCulling);
     }
 
     #[test]

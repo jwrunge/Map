@@ -280,3 +280,469 @@ impl Mesh for CubeMesh {
         )
     }
 }
+
+/// Circle mesh (2D circle made of triangular segments)
+#[derive(Debug, Clone)]
+pub struct CircleMesh {
+    vertices: Vec<Vertex>,
+    radius: f32,
+    segments: u32,
+}
+
+impl CircleMesh {
+    /// Create a new circle mesh with the given radius and number of segments
+    pub fn new(radius: f32, segments: u32) -> Self {
+        let segments = segments.max(3); // Minimum 3 segments for a triangle
+        let mut vertices = Vec::with_capacity((segments * 3) as usize);
+        
+        // Center vertex (white)
+        let center = Vertex {
+            position: [0.0, 0.0, 0.0],
+            color: [1.0, 1.0, 1.0],
+        };
+        
+        // Create triangular segments
+        for i in 0..segments {
+            let angle1 = (i as f32) * 2.0 * std::f32::consts::PI / (segments as f32);
+            let angle2 = ((i + 1) as f32) * 2.0 * std::f32::consts::PI / (segments as f32);
+            
+            // Color varies around the circle (hue wheel effect)
+            let hue1 = angle1 / (2.0 * std::f32::consts::PI);
+            let hue2 = angle2 / (2.0 * std::f32::consts::PI);
+            
+            let color1 = hsv_to_rgb(hue1, 0.8, 1.0);
+            let color2 = hsv_to_rgb(hue2, 0.8, 1.0);
+            
+            let vertex1 = Vertex {
+                position: [radius * angle1.cos(), radius * angle1.sin(), 0.0],
+                color: color1,
+            };
+            
+            let vertex2 = Vertex {
+                position: [radius * angle2.cos(), radius * angle2.sin(), 0.0],
+                color: color2,
+            };
+            
+            // Add triangle: center -> vertex1 -> vertex2
+            vertices.push(center);
+            vertices.push(vertex1);
+            vertices.push(vertex2);
+        }
+        
+        Self { vertices, radius, segments }
+    }
+
+    /// Get the radius of the circle
+    pub fn radius(&self) -> f32 {
+        self.radius
+    }
+
+    /// Get the number of segments in the circle
+    pub fn segments(&self) -> u32 {
+        self.segments
+    }
+}
+
+impl VertexProvider for CircleMesh {
+    fn vertices(&self) -> &[Vertex] {
+        &self.vertices
+    }
+    
+    fn vertex_count(&self) -> usize {
+        self.vertices.len()
+    }
+    
+    fn buffer_contents(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.vertices)
+    }
+}
+
+impl Mesh for CircleMesh {
+    fn mesh_type(&self) -> &'static str {
+        "Circle"
+    }
+    
+    fn bounds(&self) -> (glam::Vec3, glam::Vec3) {
+        (
+            glam::Vec3::new(-self.radius, -self.radius, 0.0),
+            glam::Vec3::new(self.radius, self.radius, 0.0),
+        )
+    }
+}
+
+/// Cylinder mesh (3D cylinder with circular cross-section)
+#[derive(Debug, Clone)]
+pub struct CylinderMesh {
+    vertices: Vec<Vertex>,
+    radius: f32,
+    height: f32,
+    segments: u32,
+}
+
+impl CylinderMesh {
+    /// Create a new cylinder mesh with the given radius, height, and number of segments
+    pub fn new(radius: f32, height: f32, segments: u32) -> Self {
+        let segments = segments.max(3);
+        let mut vertices = Vec::new();
+        
+        let half_height = height / 2.0;
+        
+        // Generate vertices for top and bottom circles
+        let mut top_verts = Vec::new();
+        let mut bottom_verts = Vec::new();
+        
+        for i in 0..segments {
+            let angle = (i as f32) * 2.0 * std::f32::consts::PI / (segments as f32);
+            let x = radius * angle.cos();
+            let z = radius * angle.sin();
+            
+            // Color varies by height and angle
+            let hue = angle / (2.0 * std::f32::consts::PI);
+            let top_color = hsv_to_rgb(hue, 0.6, 1.0);
+            let bottom_color = hsv_to_rgb(hue, 0.6, 0.7);
+            
+            top_verts.push(Vertex {
+                position: [x, half_height, z],
+                color: top_color,
+            });
+            
+            bottom_verts.push(Vertex {
+                position: [x, -half_height, z],
+                color: bottom_color,
+            });
+        }
+        
+        // Create side faces (quads made of two triangles each)
+        for i in 0..segments {
+            let next_i = (i + 1) % segments;
+            
+            // First triangle of quad (counter-clockwise from outside)
+            vertices.push(bottom_verts[i as usize]);
+            vertices.push(top_verts[next_i as usize]);
+            vertices.push(top_verts[i as usize]);
+            
+            // Second triangle of quad (counter-clockwise from outside)
+            vertices.push(bottom_verts[i as usize]);
+            vertices.push(bottom_verts[next_i as usize]);
+            vertices.push(top_verts[next_i as usize]);
+        }
+        
+        // Create top cap (triangular fan)
+        let top_center = Vertex {
+            position: [0.0, half_height, 0.0],
+            color: [1.0, 0.8, 0.8], // Light red
+        };
+        
+        for i in 0..segments {
+            let next_i = (i + 1) % segments;
+            vertices.push(top_center);
+            vertices.push(top_verts[i as usize]); // Correct winding for upward normal
+            vertices.push(top_verts[next_i as usize]);
+        }
+        
+        // Create bottom cap (triangular fan)
+        let bottom_center = Vertex {
+            position: [0.0, -half_height, 0.0],
+            color: [0.8, 0.8, 1.0], // Light blue
+        };
+        
+        for i in 0..segments {
+            let next_i = (i + 1) % segments;
+            vertices.push(bottom_center);
+            vertices.push(bottom_verts[next_i as usize]); // Reverse winding for downward normal
+            vertices.push(bottom_verts[i as usize]);
+        }
+        
+        Self { vertices, radius, height, segments }
+    }
+
+    /// Get the radius of the cylinder
+    pub fn radius(&self) -> f32 {
+        self.radius
+    }
+
+    /// Get the height of the cylinder
+    pub fn height(&self) -> f32 {
+        self.height
+    }
+
+    /// Get the number of segments around the cylinder
+    pub fn segments(&self) -> u32 {
+        self.segments
+    }
+}
+
+impl VertexProvider for CylinderMesh {
+    fn vertices(&self) -> &[Vertex] {
+        &self.vertices
+    }
+    
+    fn vertex_count(&self) -> usize {
+        self.vertices.len()
+    }
+    
+    fn buffer_contents(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.vertices)
+    }
+}
+
+impl Mesh for CylinderMesh {
+    fn mesh_type(&self) -> &'static str {
+        "Cylinder"
+    }
+    
+    fn bounds(&self) -> (glam::Vec3, glam::Vec3) {
+        let half_height = self.height / 2.0;
+        (
+            glam::Vec3::new(-self.radius, -half_height, -self.radius),
+            glam::Vec3::new(self.radius, half_height, self.radius),
+        )
+    }
+}
+
+/// Cone mesh (3D cone with circular base)
+#[derive(Debug, Clone)]
+pub struct ConeMesh {
+    vertices: Vec<Vertex>,
+    radius: f32,
+    height: f32,
+    segments: u32,
+}
+
+impl ConeMesh {
+    /// Create a new cone mesh with the given radius, height, and number of segments
+    pub fn new(radius: f32, height: f32, segments: u32) -> Self {
+        let segments = segments.max(3);
+        let mut vertices = Vec::new();
+        
+        let half_height = height / 2.0;
+        
+        // Apex vertex (top of cone)
+        let apex = Vertex {
+            position: [0.0, half_height, 0.0],
+            color: [1.0, 1.0, 0.0], // Yellow
+        };
+        
+        // Generate base circle vertices
+        let mut base_verts = Vec::new();
+        for i in 0..segments {
+            let angle = (i as f32) * 2.0 * std::f32::consts::PI / (segments as f32);
+            let x = radius * angle.cos();
+            let z = radius * angle.sin();
+            
+            let hue = angle / (2.0 * std::f32::consts::PI);
+            let color = hsv_to_rgb(hue, 0.8, 0.9);
+            
+            base_verts.push(Vertex {
+                position: [x, -half_height, z],
+                color,
+            });
+        }
+        
+        // Create side faces (triangles from apex to base edge)
+        for i in 0..segments {
+            let next_i = (i + 1) % segments;
+            
+            vertices.push(apex);
+            vertices.push(base_verts[i as usize]); // Correct winding for outward-facing triangles
+            vertices.push(base_verts[next_i as usize]);
+        }
+        
+        // Create base (triangular fan) - winding for downward-facing surface
+        let base_center = Vertex {
+            position: [0.0, -half_height, 0.0],
+            color: [0.8, 0.8, 0.8], // Gray
+        };
+        
+        for i in 0..segments {
+            let next_i = (i + 1) % segments;
+            vertices.push(base_center);
+            vertices.push(base_verts[next_i as usize]); // Reversed winding for downward face
+            vertices.push(base_verts[i as usize]);
+        }
+        
+        Self { vertices, radius, height, segments }
+    }
+
+    /// Get the radius of the cone base
+    pub fn radius(&self) -> f32 {
+        self.radius
+    }
+
+    /// Get the height of the cone
+    pub fn height(&self) -> f32 {
+        self.height
+    }
+
+    /// Get the number of segments around the cone base
+    pub fn segments(&self) -> u32 {
+        self.segments
+    }
+}
+
+impl VertexProvider for ConeMesh {
+    fn vertices(&self) -> &[Vertex] {
+        &self.vertices
+    }
+    
+    fn vertex_count(&self) -> usize {
+        self.vertices.len()
+    }
+    
+    fn buffer_contents(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.vertices)
+    }
+}
+
+impl Mesh for ConeMesh {
+    fn mesh_type(&self) -> &'static str {
+        "Cone"
+    }
+    
+    fn bounds(&self) -> (glam::Vec3, glam::Vec3) {
+        let half_height = self.height / 2.0;
+        (
+            glam::Vec3::new(-self.radius, -half_height, -self.radius),
+            glam::Vec3::new(self.radius, half_height, self.radius),
+        )
+    }
+}
+
+/// Sphere mesh (3D sphere using UV sphere generation)
+#[derive(Debug, Clone)]
+pub struct SphereMesh {
+    vertices: Vec<Vertex>,
+    radius: f32,
+    latitude_segments: u32,
+    longitude_segments: u32,
+}
+
+impl SphereMesh {
+    /// Create a new sphere mesh with the given radius and subdivision counts
+    pub fn new(radius: f32, latitude_segments: u32, longitude_segments: u32) -> Self {
+        let lat_segs = latitude_segments.max(3);
+        let lon_segs = longitude_segments.max(3);
+        let mut vertices = Vec::new();
+        
+        // Generate sphere vertices using spherical coordinates
+        let mut sphere_verts = Vec::new();
+        
+        for lat in 0..=lat_segs {
+            let theta = (lat as f32) * std::f32::consts::PI / (lat_segs as f32);
+            let sin_theta = theta.sin();
+            let cos_theta = theta.cos();
+            
+            for lon in 0..=lon_segs {
+                let phi = (lon as f32) * 2.0 * std::f32::consts::PI / (lon_segs as f32);
+                let sin_phi = phi.sin();
+                let cos_phi = phi.cos();
+                
+                let x = radius * sin_theta * cos_phi;
+                let y = radius * cos_theta;
+                let z = radius * sin_theta * sin_phi;
+                
+                // Color based on position (colorful sphere)
+                let color = [
+                    (sin_theta * cos_phi + 1.0) * 0.5,
+                    (cos_theta + 1.0) * 0.5,
+                    (sin_theta * sin_phi + 1.0) * 0.5,
+                ];
+                
+                sphere_verts.push(Vertex {
+                    position: [x, y, z],
+                    color,
+                });
+            }
+        }
+        
+        // Generate triangles with proper winding for outward-facing normals
+        for lat in 0..lat_segs {
+            for lon in 0..lon_segs {
+                // Calculate vertex indices for the current quad
+                let i0 = lat * (lon_segs + 1) + lon;           // Bottom-left
+                let i1 = lat * (lon_segs + 1) + (lon + 1);     // Bottom-right
+                let i2 = (lat + 1) * (lon_segs + 1) + lon;     // Top-left
+                let i3 = (lat + 1) * (lon_segs + 1) + (lon + 1); // Top-right
+                
+                // First triangle: bottom-left -> bottom-right -> top-left
+                // This creates counter-clockwise winding when viewed from outside
+                vertices.push(sphere_verts[i0 as usize]);
+                vertices.push(sphere_verts[i1 as usize]);
+                vertices.push(sphere_verts[i2 as usize]);
+                
+                // Second triangle: bottom-right -> top-right -> top-left
+                // This also creates counter-clockwise winding when viewed from outside
+                vertices.push(sphere_verts[i1 as usize]);
+                vertices.push(sphere_verts[i3 as usize]);
+                vertices.push(sphere_verts[i2 as usize]);
+            }
+        }
+        
+        Self { vertices, radius, latitude_segments: lat_segs, longitude_segments: lon_segs }
+    }
+
+    /// Get the radius of the sphere
+    pub fn radius(&self) -> f32 {
+        self.radius
+    }
+
+    /// Get the number of latitude segments
+    pub fn latitude_segments(&self) -> u32 {
+        self.latitude_segments
+    }
+
+    /// Get the number of longitude segments
+    pub fn longitude_segments(&self) -> u32 {
+        self.longitude_segments
+    }
+}
+
+impl VertexProvider for SphereMesh {
+    fn vertices(&self) -> &[Vertex] {
+        &self.vertices
+    }
+    
+    fn vertex_count(&self) -> usize {
+        self.vertices.len()
+    }
+    
+    fn buffer_contents(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.vertices)
+    }
+}
+
+impl Mesh for SphereMesh {
+    fn mesh_type(&self) -> &'static str {
+        "Sphere"
+    }
+    
+    fn bounds(&self) -> (glam::Vec3, glam::Vec3) {
+        (
+            glam::Vec3::new(-self.radius, -self.radius, -self.radius),
+            glam::Vec3::new(self.radius, self.radius, self.radius),
+        )
+    }
+}
+
+// Helper function to convert HSV to RGB
+fn hsv_to_rgb(h: f32, s: f32, v: f32) -> [f32; 3] {
+    let c = v * s;
+    let x = c * (1.0 - ((h * 6.0) % 2.0 - 1.0).abs());
+    let m = v - c;
+    
+    let (r, g, b) = if h < 1.0 / 6.0 {
+        (c, x, 0.0)
+    } else if h < 2.0 / 6.0 {
+        (x, c, 0.0)
+    } else if h < 3.0 / 6.0 {
+        (0.0, c, x)
+    } else if h < 4.0 / 6.0 {
+        (0.0, x, c)
+    } else if h < 5.0 / 6.0 {
+        (x, 0.0, c)
+    } else {
+        (c, 0.0, x)
+    };
+    
+    [r + m, g + m, b + m]
+}

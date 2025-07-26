@@ -3,16 +3,20 @@
 //! Provides a high-level interface for managing multiple renderable objects
 
 use std::collections::HashMap;
-use crate::renderable::{Renderable, Triangle, Quad, Cube};
+use crate::renderable::{Renderable, Triangle, Quad, Cube, Circle, Cylinder, Cone, Sphere};
 
 pub type EntityId = u32;
 
 /// Manages a collection of renderable entities
-/// For now, this supports triangles, quads, and cubes
+/// Supports all primitive types: triangles, quads, cubes, circles, cylinders, cones, spheres, and tori
 pub struct Scene {
     triangles: HashMap<EntityId, Triangle>,
     quads: HashMap<EntityId, Quad>,
     cubes: HashMap<EntityId, Cube>,
+    circles: HashMap<EntityId, Circle>,
+    cylinders: HashMap<EntityId, Cylinder>,
+    cones: HashMap<EntityId, Cone>,
+    spheres: HashMap<EntityId, Sphere>,
     next_id: EntityId,
 }
 
@@ -22,6 +26,10 @@ impl Scene {
             triangles: HashMap::new(),
             quads: HashMap::new(),
             cubes: HashMap::new(),
+            circles: HashMap::new(),
+            cylinders: HashMap::new(),
+            cones: HashMap::new(),
+            spheres: HashMap::new(),
             next_id: 0,
         }
     }
@@ -50,6 +58,38 @@ impl Scene {
         id
     }
     
+    /// Add a circle to the scene and return its ID
+    pub fn add_circle(&mut self, circle: Circle) -> EntityId {
+        let id = self.next_id;
+        self.circles.insert(id, circle);
+        self.next_id += 1;
+        id
+    }
+    
+    /// Add a cylinder to the scene and return its ID
+    pub fn add_cylinder(&mut self, cylinder: Cylinder) -> EntityId {
+        let id = self.next_id;
+        self.cylinders.insert(id, cylinder);
+        self.next_id += 1;
+        id
+    }
+    
+    /// Add a cone to the scene and return its ID
+    pub fn add_cone(&mut self, cone: Cone) -> EntityId {
+        let id = self.next_id;
+        self.cones.insert(id, cone);
+        self.next_id += 1;
+        id
+    }
+    
+    /// Add a sphere to the scene and return its ID
+    pub fn add_sphere(&mut self, sphere: Sphere) -> EntityId {
+        let id = self.next_id;
+        self.spheres.insert(id, sphere);
+        self.next_id += 1;
+        id
+    }
+    
     /// Remove a triangle from the scene
     pub fn remove_triangle(&mut self, id: EntityId) -> Option<Triangle> {
         self.triangles.remove(&id)
@@ -70,6 +110,18 @@ impl Scene {
         }
         for cube in self.cubes.values_mut() {
             cube.update(delta_time);
+        }
+        for circle in self.circles.values_mut() {
+            circle.update(delta_time);
+        }
+        for cylinder in self.cylinders.values_mut() {
+            cylinder.update(delta_time);
+        }
+        for cone in self.cones.values_mut() {
+            cone.update(delta_time);
+        }
+        for sphere in self.spheres.values_mut() {
+            sphere.update(delta_time);
         }
     }
     
@@ -118,11 +170,15 @@ impl Scene {
     }
 
     /// Get all renderable objects as collections for debugging and unified rendering
-    pub fn get_all_renderables(&self) -> (Vec<&Triangle>, Vec<&Quad>, Vec<&Cube>) {
+    pub fn get_all_renderables(&self) -> (Vec<&Triangle>, Vec<&Quad>, Vec<&Cube>, Vec<&Circle>, Vec<&Cylinder>, Vec<&Cone>, Vec<&Sphere>) {
         let triangles: Vec<&Triangle> = self.triangles.values().collect();
         let quads: Vec<&Quad> = self.quads.values().collect();
         let cubes: Vec<&Cube> = self.cubes.values().collect();
-        (triangles, quads, cubes)
+        let circles: Vec<&Circle> = self.circles.values().collect();
+        let cylinders: Vec<&Cylinder> = self.cylinders.values().collect();
+        let cones: Vec<&Cone> = self.cones.values().collect();
+        let spheres: Vec<&Sphere> = self.spheres.values().collect();
+        (triangles, quads, cubes, circles, cylinders, cones, spheres)
     }
 
     /// Render all triangles with mutable access for dirty flag management
@@ -149,6 +205,28 @@ impl Scene {
     pub fn cube_count(&self) -> usize {
         self.cubes.len()
     }
+    
+    /// Get the number of circles in the scene
+    pub fn circle_count(&self) -> usize {
+        self.circles.len()
+    }
+    
+    /// Get the number of cylinders in the scene
+    pub fn cylinder_count(&self) -> usize {
+        self.cylinders.len()
+    }
+    
+    /// Get the number of cones in the scene
+    pub fn cone_count(&self) -> usize {
+        self.cones.len()
+    }
+    
+    /// Get the number of spheres in the scene
+    pub fn sphere_count(&self) -> usize {
+        self.spheres.len()
+    }
+    
+    /// Get the number of tori in the scene
     
     // === 3D Primitive Creation Functions ===
     
@@ -312,21 +390,35 @@ mod tests {
     }
 
     #[test]
-    fn test_get_all_renderables() {
+    fn test_basic_scene_operations() {
         let mut scene = Scene::new();
         
-        scene.add_triangle(Triangle::new());
-        scene.add_triangle(Triangle::new());
-        scene.add_quad(Quad::with_size(1.0, 1.0));
-        scene.add_cube(Cube::with_size(1.0));
-        scene.add_cube(Cube::with_size(1.0));
-        scene.add_cube(Cube::with_size(1.0));
+        // Test adding objects
+        let triangle_id = scene.add_triangle(Triangle::new());
+        let quad_id = scene.add_quad(Quad::with_size(1.0, 1.0));
+        let cube_id = scene.add_cube(Cube::with_size(1.0));
         
-        let (triangles, quads, cubes) = scene.get_all_renderables();
+        // Test counting
+        assert_eq!(scene.triangle_count(), 1);
+        assert_eq!(scene.quad_count(), 1);
+        assert_eq!(scene.cube_count(), 1);
         
-        assert_eq!(triangles.len(), 2);
+        // Test getting all renderables
+        let (triangles, quads, cubes, circles, cylinders, cones, spheres) = scene.get_all_renderables();
+        assert_eq!(triangles.len(), 1);
         assert_eq!(quads.len(), 1);
-        assert_eq!(cubes.len(), 3);
+        assert_eq!(cubes.len(), 1);
+        assert_eq!(circles.len(), 0);
+        assert_eq!(cylinders.len(), 0);
+        assert_eq!(cones.len(), 0);
+        assert_eq!(spheres.len(), 0);
+        
+        // Test removing objects (only triangle removal is implemented)
+        assert!(scene.remove_triangle(triangle_id).is_some());
+        
+        assert_eq!(scene.triangle_count(), 0);
+        assert_eq!(scene.quad_count(), 1); // Quad still exists
+        assert_eq!(scene.cube_count(), 1); // Cube still exists
     }
 
     #[test]

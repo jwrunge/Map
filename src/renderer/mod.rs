@@ -15,7 +15,7 @@ pub mod render_core;
 pub mod vertex_cache;
 
 #[cfg(feature = "windowing")]
-use crate::renderable::{Triangle, Quad, Cube};
+use crate::renderable::{Triangle, Quad, Cube, Circle, Cylinder, Cone, Sphere};
 #[cfg(feature = "windowing")]
 use winit::window::Window;
 
@@ -25,7 +25,7 @@ pub use config::{AntialiasingMode, CullingMode, RenderConfig};
 pub use headless::HeadlessRenderer;
 pub use dynamic_uniforms::DynamicUniformBuffer;
 #[cfg(feature = "windowing")]
-pub use gpu_context::GpuContext;
+use super::gpu_context::{GpuContext, GpuError};
 pub use pipeline::RenderPipeline;
 pub use render_core::RenderCore;
 pub use vertex_cache::VertexBufferCache;
@@ -39,8 +39,8 @@ pub struct Renderer {
 
 #[cfg(feature = "windowing")]
 impl Renderer {
-    pub async fn new(window: std::sync::Arc<Window>) -> Self {
-        let gpu = GpuContext::new(window).await;
+    pub async fn new(window: std::sync::Arc<Window>) -> Result<Self, GpuError> {
+        let gpu = GpuContext::new(window).await?;
         let render_core = RenderCore::new_windowed(
             &gpu.device,
             gpu.config.format,
@@ -49,10 +49,10 @@ impl Renderer {
             RenderConfig::default(),
         );
 
-        Self {
+        Ok(Self {
             gpu,
             render_core,
-        }
+        })
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -70,13 +70,17 @@ impl Renderer {
         self.render_core.camera_mut()
     }
 
-    /// Render mixed object types (triangles, quads, cubes) in a single frame
+    /// Render mixed object types (all primitive types) in a single frame
     /// Objects are grouped by culling mode and rendered in separate passes to the same frame
     pub fn render_mixed_objects(
         &mut self,
         triangles: &[&Triangle],
         quads: &[&Quad], 
         cubes: &[&Cube],
+        circles: &[&Circle],
+        cylinders: &[&Cylinder],
+        cones: &[&Cone],
+        spheres: &[&Sphere],
     ) -> Result<(), wgpu::SurfaceError> {
         // Create single frame output and encoder for all groups
         let output = self.gpu.surface.get_current_texture()?;
@@ -99,10 +103,15 @@ impl Renderer {
             &self.gpu.queue,
             &mut encoder,
             &view,
+            &self.gpu.depth_view,
             None, // Will be handled inside the core based on config
             triangles,
             quads,
             cubes,
+            circles,
+            cylinders,
+            cones,
+            spheres,
             true, // should_clear
         )?;
 
@@ -139,25 +148,29 @@ impl Renderer {
         self.render_core.get_config()
     }
 
+    /// Helper method to update a single config field
+    fn update_config_field<F>(&mut self, update_fn: F)
+    where
+        F: FnOnce(&mut RenderConfig),
+    {
+        let mut config = self.render_core.get_config().clone();
+        update_fn(&mut config);
+        self.update_config(config);
+    }
+
     /// Set antialiasing mode specifically
     pub fn set_antialiasing(&mut self, mode: AntialiasingMode) {
-        let mut config = self.render_core.get_config().clone();
-        config.antialiasing = mode;
-        self.update_config(config);
+        self.update_config_field(|config| config.antialiasing = mode);
     }
 
     /// Set culling mode specifically
     pub fn set_culling(&mut self, mode: CullingMode) {
-        let mut config = self.render_core.get_config().clone();
-        config.culling = mode;
-        self.update_config(config);
+        self.update_config_field(|config| config.culling = mode);
     }
 
     /// Enable/disable alpha blending
     pub fn set_alpha_blending(&mut self, enabled: bool) {
-        let mut config = self.render_core.get_config().clone();
-        config.alpha_blending = enabled;
-        self.update_config(config);
+        self.update_config_field(|config| config.alpha_blending = enabled);
     }
 
     /// Switch to 2D optimized settings (no backface culling, alpha blending)

@@ -4,7 +4,7 @@
 //! code duplication between windowed and headless rendering modes.
 
 use std::collections::HashMap;
-use crate::renderable::{VertexProvider, Triangle, Quad, Cube, Renderable};
+use crate::renderable::{VertexProvider, Triangle, Quad, Cube, Circle, Cylinder, Cone, Sphere, Renderable};
 use crate::renderer::{
     config::{RenderConfig, CullingMode}, 
     dynamic_uniforms::DynamicUniformBuffer,
@@ -89,14 +89,21 @@ impl RenderCore {
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         target_view: &wgpu::TextureView,
+        depth_view: &wgpu::TextureView,
         multisampled_view: Option<&wgpu::TextureView>,
         triangles: &[&Triangle],
         quads: &[&Quad],
         cubes: &[&Cube],
+        circles: &[&Circle],
+        cylinders: &[&Cylinder],
+        cones: &[&Cone],
+        spheres: &[&Sphere],
         should_clear: bool,
     ) -> Result<(), wgpu::SurfaceError> {
         // Early exit if nothing to render
-        if triangles.is_empty() && quads.is_empty() && cubes.is_empty() {
+        if triangles.is_empty() && quads.is_empty() && cubes.is_empty() && 
+           circles.is_empty() && cylinders.is_empty() && cones.is_empty() && 
+           spheres.is_empty() {
             return Ok(());
         }
 
@@ -107,7 +114,7 @@ impl RenderCore {
         let bind_group_layout = self.uniform_buffer.get_bind_group_layout().clone();
 
         // Group objects by culling mode for separate rendering passes
-        let culling_groups = self.organize_by_culling_mode(triangles, quads, cubes);
+        let culling_groups = self.organize_by_culling_mode(triangles, quads, cubes, circles, cylinders, cones, spheres);
 
         // Collect ALL objects and matrices across all culling groups
         let (all_objects_by_group, all_matrices) = Self::collect_objects_and_matrices_static(&self.camera, &culling_groups);
@@ -169,6 +176,7 @@ impl RenderCore {
                 Self::render_culling_group_static(
                     encoder,
                     target_view,
+                    depth_view,
                     pipeline,
                     multisampled_view,
                     &all_vertex_buffers[object_index..object_index + group_size],
@@ -194,25 +202,53 @@ impl RenderCore {
         triangles: &'a [&Triangle],
         quads: &'a [&Quad],
         cubes: &'a [&Cube],
-    ) -> HashMap<CullingMode, (Vec<&'a Triangle>, Vec<&'a Quad>, Vec<&'a Cube>)> {
-        let mut culling_groups: HashMap<CullingMode, (Vec<&Triangle>, Vec<&Quad>, Vec<&Cube>)> = HashMap::new();
+        circles: &'a [&Circle],
+        cylinders: &'a [&Cylinder],
+        cones: &'a [&Cone],
+        spheres: &'a [&Sphere],
+    ) -> HashMap<CullingMode, (Vec<&'a Triangle>, Vec<&'a Quad>, Vec<&'a Cube>, Vec<&'a Circle>, Vec<&'a Cylinder>, Vec<&'a Cone>, Vec<&'a Sphere>)> {
+        let mut culling_groups: HashMap<CullingMode, (Vec<&Triangle>, Vec<&Quad>, Vec<&Cube>, Vec<&Circle>, Vec<&Cylinder>, Vec<&Cone>, Vec<&Sphere>)> = HashMap::new();
         
         // Group triangles by culling mode
         for triangle in triangles {
             let culling_mode = triangle.get_culling_mode();
-            culling_groups.entry(culling_mode).or_insert_with(|| (Vec::new(), Vec::new(), Vec::new())).0.push(*triangle);
+            culling_groups.entry(culling_mode).or_insert_with(|| (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())).0.push(*triangle);
         }
         
         // Group quads by culling mode
         for quad in quads {
             let culling_mode = quad.get_culling_mode();
-            culling_groups.entry(culling_mode).or_insert_with(|| (Vec::new(), Vec::new(), Vec::new())).1.push(*quad);
+            culling_groups.entry(culling_mode).or_insert_with(|| (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())).1.push(*quad);
         }
         
         // Group cubes by culling mode
         for cube in cubes {
             let culling_mode = cube.get_culling_mode();
-            culling_groups.entry(culling_mode).or_insert_with(|| (Vec::new(), Vec::new(), Vec::new())).2.push(*cube);
+            culling_groups.entry(culling_mode).or_insert_with(|| (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())).2.push(*cube);
+        }
+
+        // Group circles by culling mode
+        for circle in circles {
+            let culling_mode = circle.get_culling_mode();
+            culling_groups.entry(culling_mode).or_insert_with(|| (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())).3.push(*circle);
+        }
+
+        // Group cylinders by culling mode
+        for cylinder in cylinders {
+            let culling_mode = cylinder.get_culling_mode();
+            culling_groups.entry(culling_mode).or_insert_with(|| (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())).4.push(*cylinder);
+        }
+
+        // Group cones by culling mode
+        for cone in cones {
+            let culling_mode = cone.get_culling_mode();
+            culling_groups.entry(culling_mode).or_insert_with(|| (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())).5.push(*cone);
+        }
+
+        // Group spheres by culling mode
+        for sphere in spheres {
+            let culling_mode = sphere.get_culling_mode();
+            culling_groups.entry(culling_mode).or_insert_with(|| (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())).6.push(*sphere);
         }
 
         culling_groups
@@ -221,13 +257,15 @@ impl RenderCore {
     /// Collect objects and calculate transformation matrices (static version to avoid borrowing issues)
     fn collect_objects_and_matrices_static<'a>(
         camera: &Camera,
-        culling_groups: &'a HashMap<CullingMode, (Vec<&'a Triangle>, Vec<&'a Quad>, Vec<&'a Cube>)>,
+        culling_groups: &'a HashMap<CullingMode, (Vec<&'a Triangle>, Vec<&'a Quad>, Vec<&'a Cube>, Vec<&'a Circle>, Vec<&'a Cylinder>, Vec<&'a Cone>, Vec<&'a Sphere>)>,
     ) -> (Vec<(CullingMode, Vec<&'a dyn VertexProvider>)>, Vec<glam::Mat4>) {
         let mut all_objects_by_group: Vec<(CullingMode, Vec<&dyn VertexProvider>)> = Vec::new();
         let mut all_matrices: Vec<glam::Mat4> = Vec::new();
 
-        for (culling_mode, (group_triangles, group_quads, group_cubes)) in culling_groups {
-            if group_triangles.is_empty() && group_quads.is_empty() && group_cubes.is_empty() {
+        for (culling_mode, (group_triangles, group_quads, group_cubes, group_circles, group_cylinders, group_cones, group_spheres)) in culling_groups {
+            if group_triangles.is_empty() && group_quads.is_empty() && group_cubes.is_empty() && 
+               group_circles.is_empty() && group_cylinders.is_empty() && group_cones.is_empty() && 
+               group_spheres.is_empty() {
                 continue;
             }
 
@@ -246,6 +284,22 @@ impl RenderCore {
                 all_matrices.push(camera.get_view_projection_matrix() * cube.get_matrix_cached());
                 group_objects.push(*cube);
             }
+            for mut circle in group_circles {
+                all_matrices.push(camera.get_view_projection_matrix() * circle.get_matrix_cached());
+                group_objects.push(*circle);
+            }
+            for mut cylinder in group_cylinders {
+                all_matrices.push(camera.get_view_projection_matrix() * cylinder.get_matrix_cached());
+                group_objects.push(*cylinder);
+            }
+            for mut cone in group_cones {
+                all_matrices.push(camera.get_view_projection_matrix() * cone.get_matrix_cached());
+                group_objects.push(*cone);
+            }
+            for mut sphere in group_spheres {
+                all_matrices.push(camera.get_view_projection_matrix() * sphere.get_matrix_cached());
+                group_objects.push(*sphere);
+            }
 
             all_objects_by_group.push((*culling_mode, group_objects));
         }
@@ -257,6 +311,7 @@ impl RenderCore {
     fn render_culling_group_static(
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
+        depth_view: &wgpu::TextureView,
         pipeline: &wgpu::RenderPipeline,
         _multisampled_framebuffer: Option<&wgpu::TextureView>,
         vertex_buffers: &[(&wgpu::Buffer, u32)],
@@ -298,7 +353,18 @@ impl RenderCore {
                     },
                     depth_slice: None,
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: if should_clear {
+                            wgpu::LoadOp::Clear(1.0)
+                        } else {
+                            wgpu::LoadOp::Load
+                        },
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });

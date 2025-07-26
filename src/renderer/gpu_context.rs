@@ -4,6 +4,26 @@
 
 use winit::window::Window;
 
+/// GPU initialization errors
+#[derive(Debug)]
+pub enum GpuError {
+    SurfaceCreation(String),
+    AdapterRequest(String),
+    DeviceRequest(String),
+}
+
+impl std::fmt::Display for GpuError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GpuError::SurfaceCreation(msg) => write!(f, "Surface creation failed: {}", msg),
+            GpuError::AdapterRequest(msg) => write!(f, "Adapter request failed: {}", msg),
+            GpuError::DeviceRequest(msg) => write!(f, "Device request failed: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for GpuError {}
+
 /// Manages GPU device, surface, and core resources
 pub struct GpuContext {
     pub surface: wgpu::Surface<'static>,
@@ -12,10 +32,12 @@ pub struct GpuContext {
     pub config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
     pub window: std::sync::Arc<Window>,
+    pub depth_texture: wgpu::Texture,
+    pub depth_view: wgpu::TextureView,
 }
 
 impl GpuContext {
-    pub async fn new(window: std::sync::Arc<Window>) -> Self {
+    pub async fn new(window: std::sync::Arc<Window>) -> Result<Self, GpuError> {
         let size = window.inner_size();
 
         // The instance is a handle to our GPU
@@ -27,7 +49,8 @@ impl GpuContext {
             ..Default::default()
         });
 
-        let surface = instance.create_surface(window.clone()).unwrap();
+        let surface = instance.create_surface(window.clone())
+            .map_err(|e| GpuError::SurfaceCreation(format!("{:?}", e)))?;
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -36,7 +59,7 @@ impl GpuContext {
                 force_fallback_adapter: false,
             })
             .await
-            .unwrap();
+            .map_err(|e| GpuError::AdapterRequest(format!("{:?}", e)))?;
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
@@ -49,7 +72,7 @@ impl GpuContext {
                 ..Default::default()
             })
             .await
-            .unwrap();
+            .map_err(|e| GpuError::DeviceRequest(format!("{:?}", e)))?;
 
         let surface_caps = surface.get_capabilities(&adapter);
         let surface_format = {
@@ -94,14 +117,39 @@ impl GpuContext {
 
         surface.configure(&device, &config);
 
-        Self {
+        let (depth_texture, depth_view) = Self::create_depth_texture(&device, &config);
+
+        Ok(Self {
             surface,
             device,
             queue,
             config,
             size,
             window,
-        }
+            depth_texture,
+            depth_view,
+        })
+    }
+
+    fn create_depth_texture(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> (wgpu::Texture, wgpu::TextureView) {
+        let size = wgpu::Extent3d {
+            width: config.width,
+            height: config.height,
+            depth_or_array_layers: 1,
+        };
+        let desc = wgpu::TextureDescriptor {
+            label: Some("depth_texture"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        };
+        let texture = device.create_texture(&desc);
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        (texture, view)
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -110,6 +158,11 @@ impl GpuContext {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
+            
+            // Recreate depth texture with new size
+            let (depth_texture, depth_view) = Self::create_depth_texture(&self.device, &self.config);
+            self.depth_texture = depth_texture;
+            self.depth_view = depth_view;
         }
     }
 }

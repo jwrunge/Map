@@ -58,9 +58,16 @@ impl ApplicationHandler for App {
             cfg_if::cfg_if! {
                 if #[cfg(not(target_arch = "wasm32"))] {
                     log::info!("Creating wgpu state for native...");
-                    let state = pollster::block_on(State::new(window));
-                    log::info!("Native state created successfully");
-                    self.state = Some(state);
+                    match pollster::block_on(State::new(window)) {
+                        Ok(state) => {
+                            log::info!("Native state created successfully");
+                            self.state = Some(state);
+                        }
+                        Err(e) => {
+                            log::error!("Failed to create native state: {}", e);
+                            // For now, continue without state - could add more sophisticated error handling
+                        }
+                    }
                 } else {
                     log::info!("WASM window created, GPU state will be initialized on demand");
                 }
@@ -78,9 +85,15 @@ impl ApplicationHandler for App {
 
                 wasm_bindgen_futures::spawn_local(async move {
                     log::info!("Creating WASM GPU state...");
-                    let state = State::new(window).await;
-                    log::info!("WASM GPU state created successfully!");
-                    *state_holder.borrow_mut() = Some(state);
+                    match State::new(window).await {
+                        Ok(state) => {
+                            log::info!("WASM GPU state created successfully!");
+                            *state_holder.borrow_mut() = Some(state);
+                        }
+                        Err(e) => {
+                            log::error!("Failed to create WASM GPU state: {}", e);
+                        }
+                    }
                 });
 
                 self.state_ready = true;
